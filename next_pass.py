@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import argparse
 import logging
 from datetime import datetime
@@ -11,10 +12,10 @@ from s1_collection import create_s1_collection_plan
 from s2_collection import create_s2_collection_plan
 from landsat_pass import next_landsat_pass
 
-LOGGER = logging.getLogger("satellite_overpass_tool")
+LOGGER = logging.getLogger("next_pass")
 
 EXAMPLE = """Example usage:
-    satellite_overpass_tool.py --latitude 37.7749 --longitude -122.4194 --satellite sentinel-1
+    next_pass.py --latitude 34.615 --longitude -81.936 --satellite sentinel-1
 """
 
 def create_parser() -> argparse.ArgumentParser:
