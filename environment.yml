@@ -1,0 +1,8 @@
+name: next_pass
+channels:
+  - conda-forge
+dependencies:
+  - asf_search
+  - beautifulsoup4
+  - geopandas
+  - lxml
