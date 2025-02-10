@@ -2,6 +2,9 @@
 *.geojson
 *.kml
 
+# Jupyter checkpint folder
+.ipynb_checkpoints/
+
 # Byte-compiled files
 __pycache__/
 *.pyc
