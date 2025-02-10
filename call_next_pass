@@ -1,0 +1,30 @@
+import next_pass 
+
+# Locations (here La Crescenta)
+lat = 34.230429
+lon = -118.2350733
+
+# Satellites
+sat1 = "sentinel-1"
+sat2 = "sentinel-2"
+sat3 = "landsat"
+
+print("********************")
+print("*** ",sat1," ***")
+print("********************")
+result1 = next_pass.find_next_overpass(lat, lon, sat1)
+print(result1)
+
+print('')
+print("********************")
+print("*** ",sat2," ***")
+print("********************")
+result2 = next_pass.find_next_overpass(lat, lon, sat2)
+print(result2)
+
+print('')
+print("*****************")
+print("*** ",sat3," ***")
+print("*****************")
+result3 = next_pass.find_next_overpass(lat, lon, sat3)
+print(result3)
