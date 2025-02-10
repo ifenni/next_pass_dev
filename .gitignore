@@ -1,0 +1,23 @@
+# aquisition plan files
+*.geojson
+*.kml
+
+# Byte-compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.swp
+
+# Logs and temporary files
+*.log
+tmp/
+
