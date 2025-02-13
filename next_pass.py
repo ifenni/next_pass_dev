@@ -11,12 +11,19 @@ import asf_search as asf
 from s1_collection import create_s1_collection_plan
 from s2_collection import create_s2_collection_plan
 from landsat_pass import next_landsat_pass
+from tabulate import tabulate
 
 LOGGER = logging.getLogger("next_pass")
 
 EXAMPLE = """Example usage:
     next_pass.py --latitude 34.615 --longitude -81.936 --satellite sentinel-1
 """
+
+def format_collection_outputs(next_collect, next_collect_orbit):
+    table_data = [[i + 1, dt.strftime('%Y-%m-%d %H:%M:%S'), orbit] 
+                  for i, (dt, orbit) in enumerate(zip(next_collect, next_collect_orbit))]
+    return tabulate(table_data, headers=["#", "Collection Date & Time", "Relative Orbit"], tablefmt="grid")
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create parser for command line arguments."""
@@ -66,7 +73,8 @@ def find_valid_collect(
 
     if not gdf.empty:
         gdf = gdf.sort_values("begin_date", ascending=True).reset_index(drop=True)
-        return True, gdf["begin_date"].iloc[0]
+        #return True, gdf["begin_date"].iloc[0]
+        return True, gdf["begin_date"].tolist(), gdf["orbit_relative"].tolist(), gdf["geometry"].tolist()
     return False, None
 
 def get_next_collect(
@@ -79,9 +87,11 @@ def get_next_collect(
     else:
         mode_msg = " "
 
-    collect_scheduled, next_collect = find_valid_collect(collection_dataset, point)
+    collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect(collection_dataset, point)
     if collect_scheduled:
-        return f"Next{mode_msg}collect is {next_collect.strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next{mode_msg}collect is {next_collect[0].strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next{mode_msg} collect is: " + ", ".join(dt.strftime('%Y-%m-%d %H:%M:%S') for dt in next_collect)
+        return(format_collection_outputs(next_collect,next_collect_orbit))
     max_date = collection_dataset["end_date"].max().date()
     return f"No{mode_msg}collect is scheduled on or before {max_date}"
 
@@ -98,9 +108,11 @@ def find_next_sentinel2_overpass(
 ) -> str:
     """Find the next overpass for Sentinel-2 using its acquisition plans."""
     point = Point(longitude, latitude)
-    collect_scheduled, next_collect = find_valid_collect(collection_dataset, point)
+    collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect(collection_dataset, point)
     if collect_scheduled:
-        return f"Next Sentinel-2 collect is {next_collect.strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next Sentinel-2 collect is {next_collect.strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next collect is: " + ", ".join(dt.strftime('%Y-%m-%d %H:%M:%S') for dt in next_collect)
+        return(format_collection_outputs(next_collect,next_collect_orbit))
     max_date = collection_dataset["end_date"].max().date()
     return f"No Sentinel-2 collect is scheduled on or before {max_date}"
 

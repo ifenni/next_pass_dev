@@ -22,6 +22,9 @@ mamba install -c conda-forge --yes --file requirements.txt
 ```
 
 ### Usage
+```Jupyter Notebook
+Use "Run_next_pass.ipynb" 
+```
 ```bash
 python next_pass.py -lat 34.53 -lon -118.58 -sat sentinel-1
 python next_pass.py -lat 34.53 -lon -118.58 -sat sentinel-2
