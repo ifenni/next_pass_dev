@@ -1,5 +1,6 @@
 import requests
 from datetime import date, datetime
+from tabulate import tabulate
 
 # Base URL for path/row queries
 MAP_SERVICE_URL = "https://nimbus.cr.usgs.gov/arcgis/rest/services/LLook_Outlines/MapServer/1/"
@@ -8,17 +9,8 @@ JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json
 def ll2pr(lat: float, lon: float):
     """
     Convert Lat/Lon to Path/Row for both ascending (A) and descending (D) directions.
-    Additionally, returns the geometries (shapes) in GeoJSON format for folium.
-
-    Args:
-        lat (float): Latitude coordinate.
-        lon (float): Longitude coordinate.
-
-    Returns:
-        tuple: A dictionary of Path and Row lists, and a GeoJSON feature collection for geometries.
     """
     results = {"ascending": None, "descending": None}
-    geojson_shapes = {"type": "FeatureCollection", "features": []}
     directions = {"ascending": "A", "descending": "D"}
 
     for direction, mode in directions.items():
@@ -27,7 +19,7 @@ def ll2pr(lat: float, lon: float):
             f"&geometry={lon},{lat}"
             "&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects"
             "&outFields=PATH,ROW"
-            "&returnGeometry=true&f=json"
+            "&returnGeometry=false&f=json"
         )
 
         try:
@@ -43,36 +35,15 @@ def ll2pr(lat: float, lon: float):
             rows = [feature["attributes"]["ROW"] for feature in data["features"]]
             results[direction] = {"paths": paths, "rows": rows}
 
-            # Convert geometries to GeoJSON format with validation
-            for feature in data["features"]:
-                geometry = feature.get("geometry", {})
-                if geometry and geometry.get("type") in {"Polygon", "MultiPolygon"}:
-                    geojson_shapes["features"].append({
-                        "type": "Feature",
-                        "geometry": geometry,
-                        "properties": {
-                            "path": feature["attributes"]["PATH"],
-                            "row": feature["attributes"]["ROW"],
-                            "direction": direction
-                        }
-                    })
-
         except requests.RequestException as error:
             print(f"Error fetching data for {direction.capitalize()} direction: {error}")
             results[direction] = None
 
-    return results, geojson_shapes
+    return results
 
-
-def find_next_landsat_pass(path: int) -> dict:
+def find_next_landsat_pass(path: int, num_passes: int = 5) -> dict:
     """
-    Find the next Landsat pass for Landsat-8 and Landsat-9 for a given path.
-
-    Args:
-        path (int): The Landsat WRS-2 path number.
-
-    Returns:
-        dict: A dictionary containing the next pass dates for Landsat-8 and Landsat-9.
+    Find the next num_passes Landsat passes for Landsat-8 and Landsat-9 for a given path.
     """
     try:
         response = requests.get(JSON_URL, timeout=10)
@@ -80,9 +51,9 @@ def find_next_landsat_pass(path: int) -> dict:
         cycles_data = response.json()
     except requests.RequestException as error:
         print(f"Error fetching cycles data: {error}")
-        return {"landsat_8": None, "landsat_9": None}
+        return {"landsat_8": [], "landsat_9": []}
 
-    next_passes = {"landsat_8": None, "landsat_9": None}
+    next_passes = {"landsat_8": [], "landsat_9": []}
     today = date.today()
 
     for mission in next_passes:
@@ -95,31 +66,31 @@ def find_next_landsat_pass(path: int) -> dict:
             pass_date = datetime.strptime(date_str, "%m/%d/%Y").date()
 
             if pass_date >= today and str(path) in details["path"].split(","):
-                next_passes[mission] = date_str
-                break
+                next_passes[mission].append(date_str)
+                if len(next_passes[mission]) >= num_passes:
+                    break
 
     return next_passes
-
 
 def next_landsat_pass(lat: float, lon: float):
     """Main function for running the script."""
     try:
-        results, shapes = ll2pr(lat, lon)
-
+        results = ll2pr(lat, lon)
+        table_data = []
+        
         for direction, data in results.items():
             if data:
-                print(f"{direction.capitalize()} Direction:")
-                print(f"  Paths: {data['paths']}")
-                print(f"  Rows: {data['rows']}")
-
-                next_pass_dates = find_next_landsat_pass(data["paths"][0])
-                print("  Next passes:")
-                for mission, date in next_pass_dates.items():
-                    print(f"    {mission.capitalize()}: {date}" if date else
-                          f"    {mission.capitalize()}: No future pass found.")
+                for path, row in zip(data['paths'], data['rows']):
+                    next_pass_dates = find_next_landsat_pass(path, num_passes=5)
+                    for mission, dates in next_pass_dates.items():
+                        if dates:
+                            table_data.append([direction.capitalize(), path, row, mission.capitalize(), ', '.join(dates)])
+                        else:
+                            table_data.append([direction.capitalize(), path, row, mission.capitalize(), "No future passes found."])
             else:
-                print(f"No data found for {direction.capitalize()} direction.")
-
+                table_data.append([direction.capitalize(), "N/A", "N/A", "N/A", "No data found."])
+        
+        print(tabulate(table_data, headers=["Direction", "Path", "Row", "Mission", "Next Passes"], tablefmt="grid"))
+    
     except Exception as error:
         print(f"An error occurred: {error}")
-    return shapes

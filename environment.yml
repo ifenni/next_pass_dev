@@ -6,3 +6,4 @@ dependencies:
   - beautifulsoup4
   - geopandas
   - lxml
+  - tabulate
