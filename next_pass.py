@@ -57,12 +57,6 @@ def create_parser() -> argparse.ArgumentParser:
         "--bounding_box", "-bb", required=True, type=float, nargs=4,
         help="Coordinates as four floats: lat_south lat_north lon_west lon_east"
     )
-
-    # path to KML file including location shape exported from Google Earth for example
-    parser.add_argument(
-        "--area_shape_path", "-fp", required=True, type=str,
-        help="Full path to the KML location shape file"
-    )
   
     parser.add_argument(
         "--satellite",
@@ -71,6 +65,10 @@ def create_parser() -> argparse.ArgumentParser:
         type=str,
         choices=["sentinel-1", "sentinel-2", "landsat"],
         help="Satellite mission: sentinel-1, sentinel-2, or landsat",
+    )
+    # Optional path to KML file including location shape exported from Google Earth for example
+    parser.add_argument(
+        "--area_shape_path", "-fp", type=str, help="Full path to the KML location shape file"
     )
     parser.add_argument(
         "--granule", "-g", type=str, help="Granule name for Sentinel-1 processing"
@@ -231,7 +229,7 @@ def find_next_sentinel2_overpass(
 
 
 def find_next_overpass(
-    lat_min: float,lat_max: float, long_min: float, long_max: float,location_str: str, satellite: str, granule: Optional[str] = None
+    lat_min: float,lat_max: float, long_min: float, long_max: float, satellite: str,location_str: Optional[str]=None, granule: Optional[str] = None
 ) -> Dict[str, Union[str, Polygon, Point]]:
     """Find the next overpass for the given satellite and location."""
     if satellite == "sentinel-1":
@@ -280,6 +278,6 @@ if __name__ == "__main__":
     valid_longitude(lon_east)
 
     result = find_next_overpass(
-        lat_south, lat_north, lon_west,lon_east, args.area_shape_path, args.satellite, args.granule
+        lat_south, lat_north, lon_west,lon_east, args.satellite, args.area_shape_path, args.granule
     )
     print(result.get("next_collect_info", "No collection info available"))
