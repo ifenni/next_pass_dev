@@ -54,6 +54,7 @@ def create_s2_collection_plan() -> Path:
         return Path()
 
     full_gdf = pd.concat(gdfs).drop_duplicates()
+    full_gdf['begin_date'] = pd.to_datetime(full_gdf['begin_date'])
     full_gdf = full_gdf.loc[full_gdf['begin_date'] >= datetime.now()].copy()
     full_gdf = full_gdf.sort_values('begin_date', ascending=True).reset_index(drop=True)
 
