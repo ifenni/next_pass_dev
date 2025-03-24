@@ -22,15 +22,14 @@ EXAMPLE = """Example usage:
 
 
 def format_collection_outputs(next_collect, next_collect_orbit):
-    table_data = [
-        [i + 1, dt.strftime("%Y-%m-%d %H:%M:%S"), orbit]
-        for i, (dt, orbit) in enumerate(zip(next_collect, next_collect_orbit))
-    ]
-    return tabulate(
-        table_data,
-        headers=["#", "Collection Date & Time", "Relative Orbit"],
-        tablefmt="grid",
-    )
+    table_data = []
+    for i, (dt, orbit) in enumerate(zip(next_collect, next_collect_orbit), start=1):
+        table_data.append([i, dt, orbit])
+
+    headers = ["#", "Collection Date & Time", "Relative Orbit"]
+    return tabulate(table_data, headers=headers, tablefmt="grid")
+
+
 def valid_latitude(value: float) -> float:
     """Validate latitude range (-90 to 90)."""
     if value < -90 or value > 90:
@@ -54,8 +53,8 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Coordinates of the location bounding box as a single list of floats
     parser.add_argument(
-        "--bounding_box", "-bb", required=True, type=float, nargs=4,
-        help="Coordinates as four floats: lat_south lat_north lon_west lon_east"
+        "--bbox", "-b", required=True, type=float, nargs=4,
+        help="Coordinates of the AOI in SNWE order"
     )
   
     parser.add_argument(
@@ -271,7 +270,7 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    lat_south, lat_north, lon_west, lon_east = args.bounding_box
+    lat_south, lat_north, lon_west, lon_east = args.bbox
     valid_latitude(lat_south)
     valid_latitude(lat_north)
     valid_longitude(lon_west)
@@ -280,4 +279,7 @@ if __name__ == "__main__":
     result = find_next_overpass(
         lat_south, lat_north, lon_west,lon_east, args.satellite, args.area_shape_path, args.granule
     )
-    print(result.get("next_collect_info", "No collection info available"))
+    if args.satellite.lower() in ['sentinel-1', 'sentinel-2']:
+        print(result.get("next_collect_info", "No collection info available"))
+    else:
+        pass
