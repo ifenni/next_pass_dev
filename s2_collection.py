@@ -5,7 +5,7 @@ from datetime import datetime
 import geopandas as gpd
 import pandas as pd
 
-from utils import scrape_esa_website_for_download_urls, download_kml, parse_kml
+from utils import scrape_esa_download_urls, download_kml, parse_kml
 
 SENT2_URL = 'https://sentinel.esa.int/web/sentinel/copernicus/sentinel-2/acquisition-plans'
 LOGGER = logging.getLogger('s2_collection')
@@ -27,8 +27,8 @@ def create_parser() -> argparse.ArgumentParser:
 
 def create_s2_collection_plan() -> Path:
     """Create a collection plan for Sentinel-2."""
-    urls = scrape_esa_website_for_download_urls(SENT2_URL, 'sentinel-2a')
-    urls.extend(scrape_esa_website_for_download_urls(SENT2_URL, 'sentinel-2b'))
+    urls = scrape_esa_download_urls(SENT2_URL, 'sentinel-2a')
+    urls.extend(scrape_esa_download_urls(SENT2_URL, 'sentinel-2b'))
 
     gdfs = []
 
