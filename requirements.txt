@@ -1,4 +1,9 @@
 beautifulsoup4
+boto3
+earthaccess
 geopandas
+jupyterlab
+leafmap
 lxml
+rasterio
 tabulate

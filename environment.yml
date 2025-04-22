@@ -4,13 +4,11 @@ channels:
 dependencies:
   - asf_search
   - beautifulsoup4
-  - geopandas
-  - lxml
-  - tabulate
-  - geopy
-  - earthaccess
-  - leafmap
-  - watermark
   - boto3
+  - earthaccess
+  - geopandas
+  - jupyterlab
+  - leafmap
+  - lxml
   - rasterio
-  - xarray 
+  - tabulate
