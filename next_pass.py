@@ -65,6 +65,7 @@ def find_next_overpass(args):
         else:
             result["next_collect_info"] = f"No scheduled collect before {gdf['end_date'].max().date()}."
             result["next_collect_geometry"] = None  # Set to None if no collections
+        return result
 
     elif args.satellite == "sentinel-2":
         LOGGER.info("Processing Sentinel-2 data...")
@@ -77,18 +78,17 @@ def find_next_overpass(args):
         else:
             result["next_collect_info"] = f"No scheduled collect before {gdf['end_date'].max().date()}."
             result["next_collect_geometry"] = None  # Set to None if no collections
+        return result
 
     elif args.satellite == "landsat":
         LOGGER.info("Fetching Landsat data...")
         return next_landsat_pass(lat_min, lon_min)
-        if next_pass_geometry:
-            result["next_collect_info"] = "Landsat next pass data available"
-            result["next_collect_geometry"] = [next_pass_geometry]  # Wrap in list for consistency
-        else:
-            result["next_collect_info"] = "No scheduled Landsat collect before the given date."
-            result["next_collect_geometry"] = None  # No geometry available
-
-    return result
+        #if next_pass_geometry:
+        #    result["next_collect_info"] = "Landsat next pass data available"
+        #    result["next_collect_geometry"] = [next_pass_geometry]  # Wrap in list for consistency
+        #else:
+        #    result["next_collect_info"] = "No scheduled Landsat collect before the given date."
+        #    result["next_collect_geometry"] = None  # No geometry available
 
 if __name__ == "__main__":
     args = create_parser().parse_args()
