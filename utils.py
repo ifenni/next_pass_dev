@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 
 LOGGER = logging.getLogger('acquisition_utils')
 
+
 def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
     """Scrape ESA website for KML download URLs."""
     response = requests.get(url)
