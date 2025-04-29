@@ -26,7 +26,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Bounding box coordinates (SNWE order). A point has equal SN and EW."
     )
     parser.add_argument(
-        "-s", "--satellite", default="all",
+        "-s", "--sat", default="all",
         choices=["sentinel-1", "sentinel-2", "landsat", "all"],
         help="Satellite mission. Default is all."
     )
