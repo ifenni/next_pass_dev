@@ -1,14 +1,34 @@
-import requests
+import logging
 from datetime import date, datetime
+
+import argparse
+import requests
 from tabulate import tabulate
 
-# Base URL for path/row queries
-MAP_SERVICE_URL = "https://nimbus.cr.usgs.gov/arcgis/rest/services/LLook_Outlines/MapServer/1/"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# Base URLs
+MAP_SERVICE_URL = (
+    "https://nimbus.cr.usgs.gov/arcgis/rest/services/LLook_Outlines/MapServer/1/"
+)
 JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/cycles_full.json"
 
-def ll2pr(lat: float, lon: float):
+
+def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
     """
-    Convert Lat/Lon to Path/Row for both ascending (A) and descending (D) directions.
+    Convert latitude and longitude to Path/Row for ascending and descending directions.
+
+    Args:
+        lat (float): Latitude.
+        lon (float): Longitude.
+        session (requests.Session): HTTP session object.
+
+    Returns:
+        dict: Dictionary with 'ascending' and 'descending' path/row lists.
     """
     results = {"ascending": None, "descending": None}
     directions = {"ascending": "A", "descending": "D"}
@@ -23,7 +43,7 @@ def ll2pr(lat: float, lon: float):
         )
 
         try:
-            response = requests.get(query_url, timeout=10)
+            response = session.get(query_url, timeout=10)
             response.raise_for_status()
             data = response.json()
 
@@ -36,21 +56,30 @@ def ll2pr(lat: float, lon: float):
             results[direction] = {"paths": paths, "rows": rows}
 
         except requests.RequestException as error:
-            print(f"Error fetching data for {direction.capitalize()} direction: {error}")
+            logging.error(f"Error fetching data for {direction.capitalize()} direction: {error}")
             results[direction] = None
 
     return results
 
-def find_next_landsat_pass(path: int, num_passes: int = 5) -> dict:
+
+def find_next_landsat_pass(path: int, session: requests.Session, num_passes: int = 5) -> dict:
     """
-    Find the next num_passes Landsat passes for Landsat-8 and Landsat-9 for a given path.
+    Find the next Landsat-8 and Landsat-9 passes for a given path.
+
+    Args:
+        path (int): WRS-2 path number.
+        session (requests.Session): HTTP session object.
+        num_passes (int): Number of future passes to find (default is 5).
+
+    Returns:
+        dict: Dictionary with next pass dates for each mission.
     """
     try:
-        response = requests.get(JSON_URL, timeout=10)
+        response = session.get(JSON_URL, timeout=10)
         response.raise_for_status()
         cycles_data = response.json()
     except requests.RequestException as error:
-        print(f"Error fetching cycles data: {error}")
+        logging.error(f"Error fetching cycles data: {error}")
         return {"landsat_8": [], "landsat_9": []}
 
     next_passes = {"landsat_8": [], "landsat_9": []}
@@ -58,11 +87,15 @@ def find_next_landsat_pass(path: int, num_passes: int = 5) -> dict:
 
     for mission in next_passes:
         if mission not in cycles_data:
-            print(f"Mission {mission} not found in JSON data.")
+            logging.warning(f"Mission {mission} not found in JSON data.")
             continue
 
-        for date_str, details in sorted(cycles_data[mission].items(),
-                                        key=lambda x: datetime.strptime(x[0], "%m/%d/%Y")):
+        sorted_dates = sorted(
+            cycles_data[mission].items(),
+            key=lambda x: datetime.strptime(x[0], "%m/%d/%Y")
+        )
+
+        for date_str, details in sorted_dates:
             pass_date = datetime.strptime(date_str, "%m/%d/%Y").date()
 
             if pass_date >= today and str(path) in details["path"].split(","):
@@ -72,25 +105,72 @@ def find_next_landsat_pass(path: int, num_passes: int = 5) -> dict:
 
     return next_passes
 
-def next_landsat_pass(lat: float, lon: float):
-    """Main function for running the script."""
+
+def next_landsat_pass(lat: float, lon: float) -> None:
+    """
+    Main function to retrieve and display the next Landsat passes for a given location.
+
+    Args:
+        lat (float): Latitude.
+        lon (float): Longitude.
+    """
+    session = requests.Session()
+
     try:
-        results = ll2pr(lat, lon)
+        results = ll2pr(lat, lon, session=session)
         table_data = []
-        
+
         for direction, data in results.items():
             if data:
-                for path, row in zip(data['paths'], data['rows']):
-                    next_pass_dates = find_next_landsat_pass(path, num_passes=5)
+                for path, row in zip(data["paths"], data["rows"]):
+                    next_pass_dates = find_next_landsat_pass(path, session=session, num_passes=5)
                     for mission, dates in next_pass_dates.items():
-                        if dates:
-                            table_data.append([direction.capitalize(), path, row, mission.capitalize(), ', '.join(dates)])
-                        else:
-                            table_data.append([direction.capitalize(), path, row, mission.capitalize(), "No future passes found."])
+                        row_data = [
+                            direction.capitalize(),
+                            path,
+                            row,
+                            mission.capitalize(),
+                            ", ".join(dates) if dates else "No future passes found."
+                        ]
+                        table_data.append(row_data)
             else:
-                table_data.append([direction.capitalize(), "N/A", "N/A", "N/A", "No data found."])
-        
-        print(tabulate(table_data, headers=["Direction", "Path", "Row", "Mission", "Next Passes"], tablefmt="grid"))
-    
+                table_data.append(
+                    [direction.capitalize(), "N/A", "N/A", "N/A", "No data found."]
+                )
+
+        print(
+            tabulate(
+                table_data,
+                headers=["Direction", "Path", "Row", "Mission", "Next Passes"],
+                tablefmt="grid"
+            )
+        )
+
     except Exception as error:
-        print(f"An error occurred: {error}")
+        logging.exception(f"An unexpected error occurred: {error}")
+    finally:
+        session.close()
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="Find next Landsat satellite overpasses for a given latitude and longitude."
+    )
+    parser.add_argument(
+        "--lat", type=float, required=True, help="Latitude of the location."
+    )
+    parser.add_argument(
+        "--lon", type=float, required=True, help="Longitude of the location."
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    next_landsat_pass(args.lat, args.lon)
