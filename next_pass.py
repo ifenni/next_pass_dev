@@ -89,7 +89,7 @@ def find_next_overpass(args) -> dict:
     else:
         geometry = box(lon_min, lat_min, lon_max, lat_max)
 
-    if args.satellite == "all":
+    if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
         sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry)
 
@@ -105,15 +105,15 @@ def find_next_overpass(args) -> dict:
             "landsat": landsat,
         }
 
-    if args.satellite == "sentinel-1":
+    if args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
         return next_sentinel_pass(create_s1_collection_plan, geometry)
 
-    if args.satellite == "sentinel-2":
+    if args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
         return next_sentinel_pass(create_s2_collection_plan, geometry)
 
-    if args.satellite == "landsat":
+    if args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
         return next_landsat_pass(lat_min, lon_min)
 
