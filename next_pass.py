@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import argparse
 import logging
 
@@ -16,43 +17,33 @@ from utils import (bbox_type,
 LOGGER = logging.getLogger("next_pass")
 
 
-def create_parser():
-    parser = argparse.ArgumentParser(
-        description="Find next satellite overpass date.")
+def create_parser() -> argparse.ArgumentParser:
+    """Create the argument parser for CLI inputs."""
+    parser = argparse.ArgumentParser(description="Find next satellite overpass date.")
     parser.add_argument(
-        "-b",
-        "--bbox",
-        required=True,
-        type=float,
-        nargs=4,
+        "-b", "--bbox", required=True, type=float, nargs=4,
         metavar=("lat_min", "lat_max", "lon_min", "lon_max"),
-        help=(
-            "Bounding box coordinates (SNWE order)."
-            "A single point can be given as "
-            "equal values for SN and EW"
-        ),
+        help="Bounding box coordinates (SNWE order). A point has equal SN and EW."
     )
     parser.add_argument(
-        "-s",
-        "--satellite",
-        required=True,
-        choices=["sentinel-1", "sentinel-2", "landsat"],
-        help="Satellite mission",
+        "-s", "--satellite", default="all",
+        choices=["sentinel-1", "sentinel-2", "landsat", "all"],
+        help="Satellite mission. Default is all."
     )
     parser.add_argument(
-        "-f", "--aoi-file", type=str, help="Path to KML file for AOI polygon"
+        "-f", "--aoi-file", type=str,
+        help="Optional path to a KML file defining the AOI polygon."
     )
     parser.add_argument(
-        "-l",
-        "--log_level",
-        default="info",
+        "-l", "--log_level", default="info",
         choices=["debug", "info", "warning", "error"],
-        help="Set logging level",
+        help="Set logging level (default: info)."
     )
     return parser
 
 
-def format_collects(gdf):
+def format_collects(gdf: gpd.GeoDataFrame) -> str:
+    """Format the collects DataFrame into a tabulated string."""
     table = [
         (idx + 1,
          row.begin_date.strftime("%Y-%m-%d %H:%M:%S"),
@@ -63,8 +54,34 @@ def format_collects(gdf):
     return tabulate(table, headers, tablefmt="grid")
 
 
-def find_next_overpass(args):
+def next_sentinel_pass(create_plan_func, geometry) -> dict:
+    """Helper to load Sentinel collections and find intersecting collects."""
+    try:
+        gdf = gpd.read_file(create_plan_func())
+    except (IOError, OSError) as e:
+        LOGGER.error(f"Error reading Sentinel plan file: {e}")
+        return {
+            "next_collect_info": "Error reading plan file.",
+            "next_collect_geometry": None,
+        }
+
+    collects = find_intersecting_collects(gdf, geometry)
+    if not collects.empty:
+        return {
+            "next_collect_info": format_collects(collects),
+            "next_collect_geometry": collects.geometry.tolist(),
+        }
+    else:
+        return {
+            "next_collect_info": f"No scheduled collects before {gdf['end_date'].max().date()}.",
+            "next_collect_geometry": None,
+        }
+
+
+def find_next_overpass(args) -> dict:
+    """Main logic for finding the next satellite overpasses."""
     lat_min, lat_max, lon_min, lon_max = bbox_type(args.bbox)
+
     if args.aoi_file:
         geometry = create_polygon_from_kml(args.aoi_file)
     elif lat_min == lat_max and lon_min == lon_max:
@@ -72,58 +89,61 @@ def find_next_overpass(args):
     else:
         geometry = box(lon_min, lat_min, lon_max, lat_max)
 
-    # Initialize the return dictionary with default values
-    result = {"next_collect_info": None, "next_collect_geometry": None}
+    if args.satellite == "all":
+        LOGGER.info("Fetching Sentinel-1 data...")
+        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry)
+
+        LOGGER.info("Fetching Sentinel-2 data...")
+        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry)
+
+        LOGGER.info("Fetching Landsat data...")
+        landsat = next_landsat_pass(lat_min, lon_min)
+
+        return {
+            "sentinel-1": sentinel1,
+            "sentinel-2": sentinel2,
+            "landsat": landsat,
+        }
+
     if args.satellite == "sentinel-1":
-        LOGGER.info("Processing Sentinel-1 data...")
-        gdf = gpd.read_file(create_s1_collection_plan())
-        collects = find_intersecting_collects(gdf, geometry)
+        LOGGER.info("Fetching Sentinel-1 data...")
+        return next_sentinel_pass(create_s1_collection_plan, geometry)
 
-        if not collects.empty:
-            result["next_collect_info"] = format_collects(collects)
-            result["next_collect_geometry"] = (
-                collects.geometry.tolist()
-            )
-        else:
-            result["next_collect_info"] = (
-                f"No scheduled collect before {gdf['end_date'].max().date()}."
-            )
-            result["next_collect_geometry"] = None
-        return result
+    if args.satellite == "sentinel-2":
+        LOGGER.info("Fetching Sentinel-2 data...")
+        return next_sentinel_pass(create_s2_collection_plan, geometry)
 
-    elif args.satellite == "sentinel-2":
-        LOGGER.info("Processing Sentinel-2 data...")
-        gdf = gpd.read_file(create_s2_collection_plan())
-        collects = find_intersecting_collects(gdf, geometry)
-
-        if not collects.empty:
-            result["next_collect_info"] = format_collects(collects)
-            result["next_collect_geometry"] = (
-                collects.geometry.tolist()
-            )
-        else:
-            result["next_collect_info"] = (
-                f"No scheduled collect before {gdf['end_date'].max().date()}."
-            )
-            result["next_collect_geometry"] = None
-        return result
-
-    elif args.satellite == "landsat":
+    if args.satellite == "landsat":
         LOGGER.info("Fetching Landsat data...")
         return next_landsat_pass(lat_min, lon_min)
 
+    raise ValueError(
+        "Satellite not recognized. "
+        "Supported values: sentinel-1, sentinel-2, landsat, all."
+    )
 
-if __name__ == "__main__":
+
+def main():
+    """Main entry point."""
     args = create_parser().parse_args()
+
     logging.basicConfig(
         level=args.log_level.upper(),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    if args.satellite.lower() == "landsat":
-        find_next_overpass(args)
+
+    result = find_next_overpass(args)
+
+    if isinstance(result, dict) and "sentinel-1" in result:
+        # Case: satellite == all
+        for mission, mission_result in result.items():
+            print(f"\n=== {mission.upper()} ===")
+            print(mission_result.get("next_collect_info",
+                                     "No collection info available."))
     else:
-        print(
-            find_next_overpass(args).get(
-                "next_collect_info", "No collection info available"
-            )
-        )
+        # Case: only one satellite selected
+        print(result.get("next_collect_info", "No collection info available."))
+
+
+if __name__ == "__main__":
+    main()
