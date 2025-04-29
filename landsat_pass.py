@@ -138,13 +138,12 @@ def next_landsat_pass(lat: float, lon: float) -> None:
                     [direction.capitalize(), "N/A", "N/A", "N/A", "No data found."]
                 )
 
-        print(
-            tabulate(
-                table_data,
-                headers=["Direction", "Path", "Row", "Mission", "Next Passes"],
-                tablefmt="grid"
+        return {"next_collect_info": tabulate(
+            table_data,
+            headers=["Direction", "Path", "Row", "Mission", "Next Passes"],
+            tablefmt="grid"
             )
-        )
+            }
 
     except Exception as error:
         logging.exception(f"An unexpected error occurred: {error}")
@@ -173,4 +172,6 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    next_landsat_pass(args.lat, args.lon)
+    result = next_landsat_pass(args.lat, args.lon)
+    if result:
+        print(result.get("next_collect_info", "No collection info available."))
