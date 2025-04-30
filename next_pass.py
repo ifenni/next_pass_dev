@@ -3,16 +3,13 @@
 import argparse
 import logging
 
-import geopandas as gpd
 from shapely.geometry import Point, box
-from tabulate import tabulate
 
 from landsat_pass import next_landsat_pass
-from s1_collection import create_s1_collection_plan
-from s2_collection import create_s2_collection_plan
-from utils import (bbox_type,
-                   create_polygon_from_kml,
-                   find_intersecting_collects)
+from sentinel_pass import (next_sentinel_pass,
+                           create_s1_collection_plan,
+                           create_s2_collection_plan)
+from utils import bbox_type, create_polygon_from_kml
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -40,42 +37,6 @@ def create_parser() -> argparse.ArgumentParser:
         help="Set logging level (default: info)."
     )
     return parser
-
-
-def format_collects(gdf: gpd.GeoDataFrame) -> str:
-    """Format the collects DataFrame into a tabulated string."""
-    table = [
-        (idx + 1,
-         row.begin_date.strftime("%Y-%m-%d %H:%M:%S"),
-         row.orbit_relative)
-        for idx, row in gdf.iterrows()
-    ]
-    headers = ["#", "Collection Date & Time", "Relative Orbit"]
-    return tabulate(table, headers, tablefmt="grid")
-
-
-def next_sentinel_pass(create_plan_func, geometry) -> dict:
-    """Helper to load Sentinel collections and find intersecting collects."""
-    try:
-        gdf = gpd.read_file(create_plan_func())
-    except (IOError, OSError) as e:
-        LOGGER.error(f"Error reading Sentinel plan file: {e}")
-        return {
-            "next_collect_info": "Error reading plan file.",
-            "next_collect_geometry": None,
-        }
-
-    collects = find_intersecting_collects(gdf, geometry)
-    if not collects.empty:
-        return {
-            "next_collect_info": format_collects(collects),
-            "next_collect_geometry": collects.geometry.tolist(),
-        }
-    else:
-        return {
-            "next_collect_info": f"No scheduled collects before {gdf['end_date'].max().date()}.",
-            "next_collect_geometry": None,
-        }
 
 
 def find_next_overpass(args) -> dict:
