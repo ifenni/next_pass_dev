@@ -17,10 +17,10 @@ LOGGER = logging.getLogger("next_pass")
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for CLI inputs."""
     parser = argparse.ArgumentParser(description="Find next satellite overpass date.")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-b", "--bbox", required=True, type=float, nargs=4,
-        metavar=("lat_min", "lat_max", "lon_min", "lon_max"),
-        help="Bounding box coordinates (SNWE order). A point has equal SN and EW."
+        "-b", "--bbox", required=True, nargs='+', type=str,
+        help="Bounding box: Either 2 or 4 floats (point or bbox) or a path to a .kml location file"
     )
     parser.add_argument(
         "-s", "--sat", default="all",
@@ -41,14 +41,20 @@ def create_parser() -> argparse.ArgumentParser:
 
 def find_next_overpass(args) -> dict:
     """Main logic for finding the next satellite overpasses."""
-    lat_min, lat_max, lon_min, lon_max = bbox_type(args.bbox)
+    bbox = bbox_type(args.bbox)
 
-    if args.aoi_file:
-        geometry = create_polygon_from_kml(args.aoi_file)
-    elif lat_min == lat_max and lon_min == lon_max:
-        geometry = Point(lon_min, lat_min)
+    if isinstance(bbox, str):
+        # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
+        geometry = create_polygon_from_kml(bbox)
+        centroid = geometry.centroid
+        lat_min = centroid.y 
+        lon_min = centroid.y 
     else:
-        geometry = box(lon_min, lat_min, lon_max, lat_max)
+        lat_min, lat_max, lon_min, lon_max = bbox
+        if lat_min == lat_max and lon_min == lon_max:
+            geometry = Point(lon_min, lat_min)
+        else:
+            geometry = box(lon_min, lat_min, lon_max, lat_max)
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")

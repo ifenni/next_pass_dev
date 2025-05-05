@@ -1,15 +1,17 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Tuple, Optional
+from typing import List, Tuple, Optional
+
+import os
+import argparse
+import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 import requests
 from bs4 import BeautifulSoup
 from lxml import etree
 from shapely import LinearRing, Polygon, Point
-import argparse
-import xml.etree.ElementTree as ET
 
 LOGGER = logging.getLogger('acquisition_utils')
 
@@ -91,30 +93,45 @@ def find_intersecting_collects(
     return intersects.sort_values('begin_date').reset_index()
 
 
-def bbox_type(coords):
-    if len(coords) != 4:
-        raise argparse.ArgumentTypeError(
-            "bbox requires exactly four arguments: lat_min lat_max lon_min lon_max"
-        )
-    lat_min, lat_max, lon_min, lon_max = map(float, coords)
+def bbox_type(arg_coords):
 
-    if not (-90 <= lat_min <= 90 and -90 <= lat_max <= 90):
-        raise argparse.ArgumentTypeError(
-            f"Latitudes must be between -90 and 90 degrees. Got: {lat_min}, {lat_max}"
-        )
-    if not (-180 <= lon_min <= 180 and -180 <= lon_max <= 180):
-        raise argparse.ArgumentTypeError(
-            f"Longitudes must be between -180 and 180 degrees. Got: {lon_min}, {lon_max}"
-        )
-    if lat_min > lat_max:
-        raise argparse.ArgumentTypeError(
-            f"Minimum latitude (lat_min) cannot be greater than maximum latitude (lat_max). "
-            f"Got: {lat_min} > {lat_max}"
-        )
-    if lon_min > lon_max:
-        raise argparse.ArgumentTypeError(
-            f"Minimum longitude (lon_min) cannot be greater than maximum longitude (lon_max). "
-            f"Got: {lon_min} > {lon_max}"
-        )
+    if isinstance(arg_coords, str):
+        arg_coords = [arg_coords]
+    if len(arg_coords) == 1 and arg_coords[0].lower().endswith(".kml") and os.path.isfile(arg_coords[0]):
+        return arg_coords[0]  # Return the KML path as-is
+    try:
+        coords = [float(x) for x in arg_coords]
+        if len(coords) != 4 and len(coords) != 2:
+            raise argparse.ArgumentTypeError(
+                "Must provide either 2 or 4 float values for point or bbox respectively"
+            )
+        if len(coords) == 4:
+            lat_min, lat_max, lon_min, lon_max = map(float, coords)
+        elif len(coords) == 2:
+            lat_min, lon_min = map(float, coords)
+            lat_max = lat_min
+            lon_max = lon_min
 
-    return lat_min, lat_max, lon_min, lon_max
+        if not (-90 <= lat_min <= 90 and -90 <= lat_max <= 90):
+            raise argparse.ArgumentTypeError(
+                f"Latitudes must be between -90 and 90 degrees. Got: {lat_min}, {lat_max}"
+            )
+        if not (-180 <= lon_min <= 180 and -180 <= lon_max <= 180):
+            raise argparse.ArgumentTypeError(
+                f"Longitudes must be between -180 and 180 degrees. Got: {lon_min}, {lon_max}"
+            )
+        if lat_min > lat_max:
+            raise argparse.ArgumentTypeError(
+                f"Minimum latitude (lat_min) cannot be greater than maximum latitude (lat_max). "
+                f"Got: {lat_min} > {lat_max}"
+            )
+        if lon_min > lon_max:
+            raise argparse.ArgumentTypeError(
+                f"Minimum longitude (lon_min) cannot be greater than maximum longitude (lon_max). "
+                f"Got: {lon_min} > {lon_max}"
+            )
+
+        return lat_min, lat_max, lon_min, lon_max
+    except ValueError:
+        raise argparse.ArgumentTypeError("Provide either 2 or 4 float values or a path to a .kml file.")
+
