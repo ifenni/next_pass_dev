@@ -11,10 +11,10 @@ LOGGER = logging.getLogger('map_utils')
 # Style function for the bounding box GeoJSON layer
 def style_function(feature):
     return {
-        'fillColor': '#808080',  # Gray fill color
-        'color': '#000000',       # Black border color
-        'weight': 4,              # Thicker border (increased thickness)
-        'fillOpacity': 0.3        # Fill opacity (adjust if needed)
+        'fillColor': '#808080',  
+        'color': '#000000',      
+        'weight': 4,              
+        'fillOpacity': 0.3        
     }
 # Function to generate random hex color
 def random_color():
@@ -30,8 +30,8 @@ def hsl_distinct_colors(n):
     colors = []
     for i in range(n):
         # Generate colors with different hues
-        hue = i / float(n)  # Hue ranges from 0 to 1
-        color = colorsys.hsv_to_rgb(hue, 1.0, 1.0)  # Convert HSL to RGB
+        hue = i / float(n)  
+        color = colorsys.hsv_to_rgb(hue, 1.0, 1.0)  
         # Convert from RGB (0-1) to hex (#RRGGBB)
         rgb = [int(c * 255) for c in color]
         hex_color = "#{:02x}{:02x}{:02x}".format(*rgb)
@@ -40,7 +40,8 @@ def hsl_distinct_colors(n):
 
 def spread_rgb_colors(n):
     colors = []
-    step = 255 // n  # Divide the color space into n parts
+    # Divide the color space into n parts
+    step = 255 // n  
     for i in range(n):
         # Spread out the color values across the RGB spectrum
         r = (i * step) % 256
@@ -58,10 +59,10 @@ def hsl_distinct_colors_improved(num_colors):
         hue = (i * 360 / num_colors) % 360
         
         # Set Saturation (S) to a high value (e.g., 70%) for vivid colors
-        saturation = random.randint(60, 80)  # Avoid dull colors
+        saturation = random.randint(60, 80)  
         
         # Set Lightness (L) to a lower value to avoid bright, light colors like yellow (range 30-50%)
-        lightness = random.randint(30, 50)  # Darker or neutral colors
+        lightness = random.randint(30, 50)  
 
         # Convert HSL to RGB using the colorsys library
         r, g, b = colorsys.hls_to_rgb(hue / 360, lightness / 100, saturation / 100)

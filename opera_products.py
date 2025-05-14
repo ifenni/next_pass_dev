@@ -1,11 +1,8 @@
 import logging
 from datetime import date
-from dateutil.relativedelta import relativedelta  # ✅ Needed for subtracting months
+from dateutil.relativedelta import relativedelta  
 from plot_maps import hsl_distinct_colors_improved
-
-
-# Custom imports (you need to define or import these)
-from utils import create_polygon_from_kml, bbox_type  # ✅ Adjust path as needed
+from utils import create_polygon_from_kml, bbox_type  
 
 # Configure logging
 logging.basicConfig(
@@ -39,15 +36,18 @@ def find_print_available_opera_products(args) -> dict:
     if isinstance(bbox, str):
         # ✅ Create geometry from KML file
         geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds  # ✅ Fix: use 'geometry', not undefined 'area_polygon'
+        AOI = geometry.bounds  
     else:
         # ✅ Extract bounding box
         lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)  # (minx, miny, maxx, maxy)
+        # (minx, miny, maxx, maxy)
+        AOI = (lon_min, lat_min, lon_max, lat_max)  
 
-    # ✅ Calculate center point
-    c_lat = (AOI[1] + AOI[3]) / 2  # (miny + maxy) / 2
-    c_lon = (AOI[0] + AOI[2]) / 2  # (minx + maxx) / 2
+    # Calculate center point
+    # (miny + maxy) / 2
+    c_lat = (AOI[1] + AOI[3]) / 2 
+    # (minx + maxx) / 2 
+    c_lon = (AOI[0] + AOI[2]) / 2  
 
     # ✅ Date ranges for search
     today = date.today()
@@ -59,7 +59,7 @@ def find_print_available_opera_products(args) -> dict:
     ng = args.ngr
     print("\n** Available OPERA Products for Selected Area of Interest (AOI) **\n")
     for dataset in opera_datasets:
-        print(f"🔍 Searching {dataset}...")
+        print(f"* Searching {dataset}...")
 
         try:
             results, gdf = leafmap.nasa_data_search(
@@ -74,19 +74,19 @@ def find_print_available_opera_products(args) -> dict:
             results = results[-ng:]
             gdf = gdf[-ng:]  
             
-            print(f"✅ Success: {dataset} → {len(gdf)} granule(s) saved.")
+            print(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
             results_dict[dataset] = {
                 "results": results,
                 "gdf": gdf,
             }
         except Exception as e:
-            print(f"❌ Error fetching {dataset}: {e}")  
+            print(f"-> Error fetching {dataset}: {e}")  
 
     # output relevant information (Granule ID, Time Range and Download URL)
     print(f"\n** Relevant information about the {len(gdf)} saved granule(s) per OPERA product :  **")
     for dataset, data in results_dict.items():
-        print(f"\n📦 Dataset: {dataset} ************************")
-        for item in data["results"]:
+        print(f"\n*** Dataset: {dataset} ************************")
+        for i, item in enumerate(data["results"], start=1):
             umm = item["umm"]
 
             granule_id = umm.get("GranuleUR", "N/A")
@@ -94,16 +94,17 @@ def find_print_available_opera_products(args) -> dict:
             start_time = temporal.get("RangeDateTime", {}).get("BeginningDateTime", "N/A")
             end_time = temporal.get("RangeDateTime", {}).get("EndingDateTime", "N/A")
 
-            # Extract download URL (if available)
+            # Extract download URL 
             download_url = "N/A"
             for url_entry in umm.get("RelatedUrls", []):
                 if url_entry.get("Type") == "GET DATA":
                     download_url = url_entry.get("URL", "N/A")
                     break
 
-            print(f"🆔 Granule ID: {granule_id}")
-            print(f"🕒 Time Range: {start_time} → {end_time}")
-            print(f"🔗 Download URL: {download_url}")
+            print(f"Granule #{i}")
+            print(f"+ Granule ID: {granule_id}")
+            print(f"+ Time Range: {start_time} → {end_time}")
+            print(f"+ Download URL: {download_url}\n")
 
     
     # export to csv file
@@ -126,7 +127,7 @@ def find_print_available_opera_products(args) -> dict:
                         break
 
                 writer.writerow([dataset, granule_id, start_time, end_time, download_url])
-    print("\n✅ OPERA products metadata successfully saved to opera_granule_metadata.csv")
+    print("\n-> OPERA products metadata successfully saved to opera_granule_metadata.csv")
 
     return results_dict
 
@@ -137,21 +138,21 @@ def generate_opera_map(results_dict, args):
 
     output_path="opera_products_map_1.html"
 
-    # ✅ Parse the bbox argument
+    # Parse the bbox argument
     bbox = bbox_type(args.bbox)
 
     if isinstance(bbox, str):
-        # ✅ Create geometry from KML file
+        # Create geometry from KML file
         geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds  # ✅ Fix: use 'geometry', not undefined 'area_polygon'
+        AOI = geometry.bounds  
     else:
-        # ✅ Extract bounding box
+        # Extract bounding box
         lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)  # (minx, miny, maxx, maxy)
+        AOI = (lon_min, lat_min, lon_max, lat_max)  
 
-    # ✅ Calculate center point
-    c_lat = (AOI[1] + AOI[3]) / 2  # (miny + maxy) / 2
-    c_lon = (AOI[0] + AOI[2]) / 2  # (minx + maxx) / 2
+    # Calculate center point
+    c_lat = (AOI[1] + AOI[3]) / 2  
+    c_lon = (AOI[0] + AOI[2]) / 2  
 
     m = leafmap.Map(center=(c_lat, c_lon), zoom=3)
     m.add_basemap("Esri.WorldImagery")
@@ -166,7 +167,7 @@ def generate_opera_map(results_dict, args):
         gdf = data.get("gdf")
 
         if gdf is None or gdf.empty:
-            print(f"⚠️ Skipping {dataset}: no data.")
+            print(f"- Skipping {dataset}: no data.")
             continue
 
         style = {
@@ -181,15 +182,15 @@ def generate_opera_map(results_dict, args):
             legend_labels.append(dataset)
             legend_colors.append(color)
         except Exception as e:
-            print(f"❌ Could not add {dataset} to map: {e}")
+            print(f"- Could not add {dataset} to map: {e}")
 
-    # Add legend only (no popups)
+    # Add legend
     m.add_legend(title="OPERA Products", labels=legend_labels, colors=legend_colors)
 
     # Save and open
     m.save(output_path)
     webbrowser.open(output_path)
-    print(f"✅ OPERA granules Map successfully saved to {output_path}")
+    print(f"-> OPERA granules Map successfully saved to {output_path}")
 
 
 def make_opera_granule_map(results_dict, args):
@@ -201,7 +202,7 @@ def make_opera_granule_map(results_dict, args):
 
     output_file="opera_products_map_2.html"
 
-    # ✅ Parse AOI center for initial map centering
+    # Parse AOI center for initial map centering
     bbox = bbox_type(args.bbox)
     if isinstance(bbox, str):
         geometry = create_polygon_from_kml(bbox)
@@ -311,7 +312,7 @@ def make_opera_granule_map(results_dict, args):
 
     # Save map
     map_object.save(output_file)
-    print(f"✅ OPERA granules Map successfully saved to {output_file}")
+    print(f"-> OPERA granules Map successfully saved to {output_file}")
 
 
 
