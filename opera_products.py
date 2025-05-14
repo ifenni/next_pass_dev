@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import date
 from dateutil.relativedelta import relativedelta  
 from plot_maps import hsl_distinct_colors_improved
@@ -59,28 +60,38 @@ def find_print_available_opera_products(args) -> dict:
     ng = args.ngr
     print("\n** Available OPERA Products for Selected Area of Interest (AOI) **\n")
     for dataset in opera_datasets:
-        print(f"* Searching {dataset}...")
+        print(f"* Searching {dataset} ...")
 
-        try:
-            results, gdf = leafmap.nasa_data_search(
-                short_name=dataset,
-                cloud_hosted=True,
-                bounding_box=AOI,
-                temporal=(StartDate_Recent, EndDate_Recent),
-                return_gdf=True,
-            )
-            
-            # Get last ng granules
-            results = results[-ng:]
-            gdf = gdf[-ng:]  
-            
-            print(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
-            results_dict[dataset] = {
-                "results": results,
-                "gdf": gdf,
-            }
-        except Exception as e:
-            print(f"-> Error fetching {dataset}: {e}")  
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                results, gdf = leafmap.nasa_data_search(
+                    short_name=dataset,
+                    cloud_hosted=True,
+                    bounding_box=AOI,
+                    temporal=(StartDate_Recent, EndDate_Recent),
+                    return_gdf=True,
+                )
+
+                if gdf is not None and not gdf.empty:
+                    results = results[-ng:]
+                    gdf = gdf[-ng:]
+                    print(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
+                    results_dict[dataset] = {
+                        "results": results,
+                        "gdf": gdf,
+                    }
+                    break  
+                else:
+                    print(f"xxx Attempt {attempt}: No granules for {dataset}.")
+            except Exception as e:
+                print(f"xxx Attempt {attempt}: Error fetching {dataset}: {str(e)}")
+
+            if attempt < max_attempts:
+                time.sleep(2 ** attempt) 
+            else:
+                print(f"-> Failed to fetch {dataset} after {max_attempts} attempts.")
+
 
     # output relevant information (Granule ID, Time Range and Download URL)
     print(f"\n** Relevant information about the {len(gdf)} saved granule(s) per OPERA product :  **")
@@ -101,10 +112,10 @@ def find_print_available_opera_products(args) -> dict:
                     download_url = url_entry.get("URL", "N/A")
                     break
 
-            print(f"Granule #{i}")
+            print(f"-- Granule #{i}")
             print(f"+ Granule ID: {granule_id}")
             print(f"+ Time Range: {start_time} → {end_time}")
-            print(f"+ Download URL: {download_url}\n")
+            print(f"+ Download URL: {download_url}")
 
     
     # export to csv file
