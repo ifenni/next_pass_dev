@@ -10,10 +10,10 @@ from utils import find_intersecting_collects, scrape_esa_download_urls
 LOGGER = logging.getLogger("sentinel_pass")
 
 SENT1_URL = (
-    "https://sentinel.esa.int/web/sentinel/copernicus/sentinel-1/acquisition-plans"
+    "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-1/acquisition-plans"
 )
 SENT2_URL = (
-    "https://sentinel.esa.int/web/sentinel/copernicus/sentinel-2/acquisition-plans"
+    "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2/acquisition-plans"
 )
 
 
