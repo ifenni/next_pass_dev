@@ -14,7 +14,7 @@ from sentinel_pass import (
 from utils import bbox_type, create_polygon_from_kml
 from opera_products import (
     find_print_available_opera_products,
-    generate_opera_map,
+    export_opera_products,
     make_opera_granule_map,
 )
 
@@ -47,7 +47,8 @@ def create_parser() -> argparse.ArgumentParser:
         required=True,
         nargs="+",
         type=str,
-        help="Bounding box: Either 2 or 4 floats (point or bbox) or a path to a .kml location file",
+        help="Bounding box: Either 2 or 4 floats (point or bbox) "
+        "or a path to a .kml location file",
     )
     parser.add_argument(
         "-s",
@@ -60,7 +61,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-n",
         "--ngr",
         default=5,
-        type =int,
+        type=int,
         help="Number of mots recent granules to consider for OPERA products",
     )
     parser.add_argument(
@@ -140,7 +141,10 @@ def main():
         for mission, mission_result in result.items():
             print(f"\n=== {mission.upper()} ===")
             print(
-                mission_result.get("next_collect_info", "No collection info available.")
+                mission_result.get(
+                    "next_collect_info",
+                    "No collection info available."
+                )
             )
     else:
         # Case: only one satellite selected
@@ -148,8 +152,9 @@ def main():
 
     # search for & print OPERA results
     results_opera = find_print_available_opera_products(args)
-    generate_opera_map(results_opera, args)
+    export_opera_products(results_opera)
     make_opera_granule_map(results_opera, args)
+
 
 if __name__ == "__main__":
     main()

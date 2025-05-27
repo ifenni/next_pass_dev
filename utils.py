@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional
+from urllib.parse import urljoin
 
 import os
 import argparse
@@ -24,7 +25,14 @@ def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
     soup = BeautifulSoup(response.text, 'html.parser')
     div = soup.find('div', class_=class_)
     hrefs = [a['href'] for a in div.find_all('a', href=True)]
-    return [f'https://sentinel.esa.int{href}' for href in hrefs]
+    clean_hrefs = []
+    for href in hrefs:
+        if href.startswith('https://sentinel/'):
+            # Fix malformed domain
+            href = href.replace('https://sentinel', '')
+        clean_hrefs.append(urljoin('https://sentinels.copernicus.eu', href))
+
+    return clean_hrefs
 
 
 def download_kml(url: str, out_path: str = 'collection.kml') -> Path:
@@ -45,20 +53,33 @@ def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
 
     data = placemark.find(f'{ns}ExtendedData')
     mode = data.find(f"{ns}Data[@name='Mode']/{ns}value").text
-    orbit_absolute = int(data.find(f"{ns}Data[@name='OrbitAbsolute']/{ns}value").text)
-    orbit_relative = int(data.find(f"{ns}Data[@name='OrbitRelative']/{ns}value").text)
+    orbit_absolute = int(data.find(
+        f"{ns}Data[@name='OrbitAbsolute']/{ns}value").text
+        )
+    orbit_relative = int(data.find(
+        f"{ns}Data[@name='OrbitRelative']/{ns}value").text
+        )
 
-    coords_text = placemark.find(f'{ns}LinearRing/{ns}coordinates').text.strip()
-    coords = [tuple(map(float, coord.split(',')[:2])) for coord in coords_text.split()]
+    coords_text = placemark.find(
+        f'{ns}LinearRing/{ns}coordinates'
+        ).text.strip()
+    coords = [tuple(
+        map(float, coord.split(',')[:2])
+        ) for coord in coords_text.split()]
     footprint = Polygon(LinearRing(coords))
 
-    return begin_date, end_date, mode, orbit_absolute, orbit_relative, footprint
+    return (
+        begin_date, end_date, mode,
+        orbit_absolute, orbit_relative, footprint
+    )
 
 
 def parse_kml(kml_path: Path) -> gpd.GeoDataFrame:
     """Parse a KML file into a GeoDataFrame."""
     tree = etree.parse(kml_path)
-    placemarks = [parse_placemark(elem) for elem in tree.findall('.//{http://www.opengis.net/kml/2.2}Placemark')]
+    placemarks = [parse_placemark(elem) for elem in tree.findall(
+        './/{http://www.opengis.net/kml/2.2}Placemark'
+        )]
     placemarks = [p for p in placemarks if p]
 
     columns = ['begin_date', 'end_date', 'mode',
@@ -71,8 +92,12 @@ def parse_kml_polygon_coords(kml_file: Path) -> List[Tuple[float, float]]:
     """Extract coordinates from a KML polygon."""
     tree = ET.parse(kml_file)
     ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    coords_text = tree.find('.//kml:Placemark//kml:coordinates', ns).text.strip()
-    return [tuple(map(float, coord.split(',')[:2])) for coord in coords_text.split()]
+    coords_text = tree.find(
+        './/kml:Placemark//kml:coordinates', ns
+        ).text.strip()
+    return [tuple(
+        map(float, coord.split(',')[:2])
+        ) for coord in coords_text.split()]
 
 
 def create_polygon_from_kml(kml_file: Path) -> Optional[Polygon]:
@@ -104,19 +129,23 @@ def bbox_type(arg_coords):
     - Four floats (bounding box: lat_min lat_max lon_min lon_max)
 
     Returns:
-        str or tuple: KML file path or bounding box tuple (lat_min, lat_max, lon_min, lon_max)
+        str or tuple: KML file path, or a bounding box tuple in the format:
+        (lat_min, lat_max, lon_min, lon_max)
     """
     if isinstance(arg_coords, str):
         arg_coords = [arg_coords]
 
-    if len(arg_coords) == 1 and arg_coords[0].lower().endswith(".kml") and os.path.isfile(arg_coords[0]):
+    if (len(arg_coords) == 1
+            and arg_coords[0].lower().endswith(".kml")
+            and os.path.isfile(arg_coords[0])):
         return arg_coords[0]
 
     try:
         coords = [float(x) for x in arg_coords]
         if len(coords) not in (2, 4):
             raise argparse.ArgumentTypeError(
-                "Must provide either a lat/lon pair for a point or SNWE (lat_min lat_max lon_min lon_max) for a bbox."
+                "Must provide either a lat/lon pair for a point or SNWE "
+                "(lat_min lat_max lon_min lon_max) for a bbox."
             )
 
         if len(coords) == 2:
@@ -127,23 +156,27 @@ def bbox_type(arg_coords):
 
         if not (-90 <= lat_min <= 90 and -90 <= lat_max <= 90):
             raise argparse.ArgumentTypeError(
-                f"Latitudes must be between -90 and 90 degrees. Got: {lat_min}, {lat_max}"
+                f"Latitudes must be between -90 and 90 degrees. "
+                f"Got: {lat_min}, {lat_max}"
             )
         if not (-180 <= lon_min <= 180 and -180 <= lon_max <= 180):
             raise argparse.ArgumentTypeError(
-                f"Longitudes must be between -180 and 180 degrees. Got: {lon_min}, {lon_max}"
+                f"Longitudes must be between -180 and 180 degrees. "
+                f"Got: {lon_min}, {lon_max}"
             )
 
         if lat_min > lat_max:
             LOGGER.warning(
-                "Minimum latitude %.6f is greater than maximum %.6f; swapping values.",
+                "Minimum latitude %.6f is greater than "
+                "maximum %.6f; swapping values.",
                 lat_min, lat_max
             )
             lat_min, lat_max = lat_max, lat_min
 
         if lon_min > lon_max:
             LOGGER.warning(
-                "Minimum longitude %.6f is greater than maximum %.6f; swapping values.",
+                "Minimum longitude %.6f is greater "
+                "than maximum %.6f; swapping values.",
                 lon_min, lon_max
             )
             lon_min, lon_max = lon_max, lon_min
@@ -152,5 +185,6 @@ def bbox_type(arg_coords):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Provide either 2 or 4 float values or a path to a valid .kml file."
+            "Provide either 2 or 4 float values "
+            "or a path to a valid .kml file."
         )

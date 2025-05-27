@@ -1,9 +1,17 @@
 import logging
 import time
+import csv
 from datetime import date
-from dateutil.relativedelta import relativedelta  
-from plot_maps import hsl_distinct_colors_improved
-from utils import create_polygon_from_kml, bbox_type  
+from dateutil.relativedelta import relativedelta
+import leafmap
+import folium
+from matplotlib.colors import to_hex
+import matplotlib.pyplot as plt
+import pandas as pd
+from branca.element import MacroElement
+from jinja2 import Template
+from utils import create_polygon_from_kml, bbox_type
+
 
 # Configure logging
 logging.basicConfig(
@@ -18,9 +26,6 @@ EARTH_DATA_URL = (
 
 
 def find_print_available_opera_products(args) -> dict:
-    import leafmap  
-    import csv
-
     opera_datasets = [
         'OPERA_L3_DSWX-HLS_V1',
         'OPERA_L3_DSWX-S1_V1',
@@ -31,26 +36,20 @@ def find_print_available_opera_products(args) -> dict:
         'OPERA_L3_DISP-S1_V1'
     ]
 
-    # ✅ Parse the bbox argument
+    # Parse the bbox argument
     bbox = bbox_type(args.bbox)
 
     if isinstance(bbox, str):
-        # ✅ Create geometry from KML file
+        # Create geometry from KML file
         geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds  
+        AOI = geometry.bounds
     else:
-        # ✅ Extract bounding box
+        # Extract bounding box
         lat_min, lat_max, lon_min, lon_max = bbox
         # (minx, miny, maxx, maxy)
-        AOI = (lon_min, lat_min, lon_max, lat_max)  
+        AOI = (lon_min, lat_min, lon_max, lat_max)
 
-    # Calculate center point
-    # (miny + maxy) / 2
-    c_lat = (AOI[1] + AOI[3]) / 2 
-    # (minx + maxx) / 2 
-    c_lon = (AOI[0] + AOI[2]) / 2  
-
-    # ✅ Date ranges for search
+    # Date ranges for search
     today = date.today()
     one_year_ago = today - relativedelta(months=12)
     StartDate_Recent = one_year_ago.strftime("%Y-%m-%d") + "T00:00:00"
@@ -58,7 +57,7 @@ def find_print_available_opera_products(args) -> dict:
 
     results_dict = {}
     ng = args.ngr
-    print("\n** Available OPERA Products for Selected Area of Interest (AOI) **\n")
+    print("\n** Available OPERA Products for Selected AOI **\n")
     for dataset in opera_datasets:
         print(f"* Searching {dataset} ...")
 
@@ -74,27 +73,50 @@ def find_print_available_opera_products(args) -> dict:
                 )
 
                 if gdf is not None and not gdf.empty:
-                    results = results[-ng:]
-                    gdf = gdf[-ng:]
-                    print(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
+                    # select most recent ng gdf elements
+                    gdf["original_index"] = gdf.index
+                    gdf["BeginningDateTime"] = pd.to_datetime(
+                                                gdf["BeginningDateTime"]
+                                                )
+                    gdf = gdf.sort_values("BeginningDateTime",
+                                          ascending=False).head(ng)
+                    gdf["BeginningDateTime"] = (
+                        gdf["BeginningDateTime"].dt.strftime(
+                            "%Y-%m-%dT%H:%M:%SZ"
+                            )
+                    )
+                    results = [results[k] for k in gdf["original_index"]]
+                    gdf = gdf.drop(columns="original_index")
+                    print(
+                        f"-> Success: {dataset} → "
+                        f"{len(gdf)} granule(s) saved."
+                    )
                     results_dict[dataset] = {
                         "results": results,
                         "gdf": gdf,
                     }
-                    break  
+                    break
                 else:
                     print(f"xxx Attempt {attempt}: No granules for {dataset}.")
             except Exception as e:
-                print(f"xxx Attempt {attempt}: Error fetching {dataset}: {str(e)}")
+                print(
+                    f"xxx Attempt {attempt}:"
+                    f" Error fetching {dataset}: {str(e)}"
+                    )
 
             if attempt < max_attempts:
-                time.sleep(2 ** attempt) 
+                time.sleep(2 ** attempt)
             else:
-                print(f"-> Failed to fetch {dataset} after {max_attempts} attempts.")
-
+                print(
+                    f"-> Failed to fetch {dataset}"
+                    f" after {max_attempts} attempts."
+                    )
 
     # output relevant information (Granule ID, Time Range and Download URL)
-    print(f"\n** Relevant information about the {len(gdf)} saved granule(s) per OPERA product :  **")
+    print(
+        f"\n** Relevant information about the {len(gdf)} "
+        f"saved granule(s) per OPERA product :  **"
+        )
     for dataset, data in results_dict.items():
         print(f"\n*** Dataset: {dataset} ************************")
         for i, item in enumerate(data["results"], start=1):
@@ -102,10 +124,14 @@ def find_print_available_opera_products(args) -> dict:
 
             granule_id = umm.get("GranuleUR", "N/A")
             temporal = umm.get("TemporalExtent", {})
-            start_time = temporal.get("RangeDateTime", {}).get("BeginningDateTime", "N/A")
-            end_time = temporal.get("RangeDateTime", {}).get("EndingDateTime", "N/A")
+            start_time = temporal.get("RangeDateTime", {}).get(
+                "BeginningDateTime", "N/A"
+                )
+            end_time = temporal.get("RangeDateTime", {}).get(
+                "EndingDateTime", "N/A"
+                )
 
-            # Extract download URL 
+            # Extract download URL
             download_url = "N/A"
             for url_entry in umm.get("RelatedUrls", []):
                 if url_entry.get("Type") == "GET DATA":
@@ -117,19 +143,29 @@ def find_print_available_opera_products(args) -> dict:
             print(f"+ Time Range: {start_time} → {end_time}")
             print(f"+ Download URL: {download_url}")
 
-    
+    return results_dict
+
+
+def export_opera_products(results_dict):
     # export to csv file
-    with open("opera_products_metadata.csv", "w", newline="") as csvfile:
+    output_file = "opera_products_metadata.csv"
+    with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Dataset", "Granule ID", "Start Time", "End Time", "Download URL"])
+        writer.writerow([
+            "Dataset", "Granule ID", "Start Time", "End Time", "Download URL"]
+            )
 
         for dataset, data in results_dict.items():
             for item in data["results"]:
                 umm = item["umm"]
                 granule_id = umm.get("GranuleUR", "N/A")
                 temporal = umm.get("TemporalExtent", {})
-                start_time = temporal.get("RangeDateTime", {}).get("BeginningDateTime", "N/A")
-                end_time = temporal.get("RangeDateTime", {}).get("EndingDateTime", "N/A")
+                start_time = temporal.get("RangeDateTime", {}).get(
+                    "BeginningDateTime", "N/A"
+                    )
+                end_time = temporal.get("RangeDateTime", {}).get(
+                    "EndingDateTime", "N/A"
+                    )
 
                 download_url = "N/A"
                 for url_entry in umm.get("RelatedUrls", []):
@@ -137,81 +173,21 @@ def find_print_available_opera_products(args) -> dict:
                         download_url = url_entry.get("URL", "N/A")
                         break
 
-                writer.writerow([dataset, granule_id, start_time, end_time, download_url])
-    print("\n-> OPERA products metadata successfully saved to opera_granule_metadata.csv")
-
-    return results_dict
-
-
-def generate_opera_map(results_dict, args):
-    import leafmap.foliumap as leafmap  # folium backend
-    import webbrowser
-
-    output_path="opera_products_map_1.html"
-
-    # Parse the bbox argument
-    bbox = bbox_type(args.bbox)
-
-    if isinstance(bbox, str):
-        # Create geometry from KML file
-        geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds  
-    else:
-        # Extract bounding box
-        lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)  
-
-    # Calculate center point
-    c_lat = (AOI[1] + AOI[3]) / 2  
-    c_lon = (AOI[0] + AOI[2]) / 2  
-
-    m = leafmap.Map(center=(c_lat, c_lon), zoom=3)
-    m.add_basemap("Esri.WorldImagery")
-
-    # Generate distinct colors
-    colors = hsl_distinct_colors_improved(len(results_dict))
-    legend_labels = []
-    legend_colors = []
-
-    for i, (dataset, data) in enumerate(results_dict.items()):
-        color = colors[i]
-        gdf = data.get("gdf")
-
-        if gdf is None or gdf.empty:
-            print(f"- Skipping {dataset}: no data.")
-            continue
-
-        style = {
-            "color": color,
-            "fillColor": color,
-            "weight": 2,
-            "fillOpacity": 0.5,
-        }
-
-        try:
-            m.add_gdf(gdf, layer_name=dataset, style=style)
-            legend_labels.append(dataset)
-            legend_colors.append(color)
-        except Exception as e:
-            print(f"- Could not add {dataset} to map: {e}")
-
-    # Add legend
-    m.add_legend(title="OPERA Products", labels=legend_labels, colors=legend_colors)
-
-    # Save and open
-    m.save(output_path)
-    webbrowser.open(output_path)
-    print(f"-> OPERA granules Map successfully saved to {output_path}")
+                writer.writerow(
+                    [dataset, granule_id, start_time, end_time, download_url]
+                    )
+    print(
+        "\n-> OPERA products metadata successfully saved"
+        "to opera_granule_metadata.csv"
+        )
 
 
 def make_opera_granule_map(results_dict, args):
     """
-    Create an interactive map displaying OPERA granules for all datasets with clickable download links.
+    Create an interactive map displaying OPERA granules for all datasets
+    with download links.
     """
-    import folium
-    import geopandas as gpd
-
-    output_file="opera_products_map_2.html"
+    output_file = "opera_products_map.html"
 
     # Parse AOI center for initial map centering
     bbox = bbox_type(args.bbox)
@@ -230,8 +206,6 @@ def make_opera_granule_map(results_dict, args):
     folium.TileLayer("Esri.WorldImagery").add_to(map_object)
 
     # Generate distinct colors for layers
-    from matplotlib.colors import to_hex
-    import matplotlib.pyplot as plt
     cmap = plt.get_cmap("tab20")
     dataset_names = list(results_dict.keys())
     colors = [to_hex(cmap(i % 20)) for i in range(len(dataset_names))]
@@ -241,21 +215,32 @@ def make_opera_granule_map(results_dict, args):
     for i, (dataset, data) in enumerate(results_dict.items()):
         gdf = data.get("gdf")
         if gdf is None or gdf.empty:
-            print(f"⚠️ Skipping {dataset}: empty or missing GeoDataFrame.")
+            print(f"Skipping {dataset}: empty or missing GeoDataFrame.")
             continue
 
         gdf = gdf.copy()
-
+        if i < 4:
+            pos_delta = 0.08*(i-1)
+        else:
+            pos_delta = 0.08*(i-5)
         # Add download URL and name for popup
-        for idx, row in gdf.iterrows():
+        for idx, item in enumerate(data["results"]):
             try:
-                url = row["meta"]["umm"]["RelatedUrls"][0]["URL"]
-                label = row["meta"]["umm"].get("GranuleUR", "OPERA Granule")
-            except:
-                url = "URL not available"
+                umm = item["umm"]
+                download_url = "N/A"
+                for url_entry in umm.get("RelatedUrls", []):
+                    if url_entry.get("Type") == "GET DATA":
+                        download_url = url_entry.get("URL", "N/A")
+                        break
+                label = umm.get("GranuleUR", "OPERA Granule")
+
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                download_url = "URL not available"
                 label = "OPERA Granule"
-            gdf.at[idx, "download_url"] = url
-            gdf.at[idx, "GranuleUR"] = label
+
+            gdf.iloc[idx, gdf.columns.get_loc("URL")] = download_url
+            gdf.iloc[idx, gdf.columns.get_loc("GranuleUR")] = label
 
         color = colors[i]
         style = {
@@ -276,13 +261,18 @@ def make_opera_granule_map(results_dict, args):
         for _, row in gdf.iterrows():
             centroid = row.geometry.centroid
             popup_html = f"""
-            <b>{row['GranuleUR']}</b><br>
-            <a href="{row['download_url']}" target="_blank">Download Granule</a>
+                <b>{row['GranuleUR']}</b><br>
+                <a href="{row['URL']}" target="_blank">
+                    Download Granule
+                </a>
             """
+            # Use icon_color in folium.Icon for each marker
             folium.Marker(
-                location=[centroid.y, centroid.x],
-                popup=folium.Popup(popup_html, max_width=300),
-                icon=folium.Icon(color="blue", icon="cloud-download")
+                location=[centroid.y+pos_delta, centroid.x+pos_delta],
+                popup=folium.Popup(popup_html, max_width=400),
+                icon=folium.Icon(color="lightgray",
+                                 icon_color=color, icon="cloud-download"
+                                 )
             ).add_to(map_object)
 
         legend_entries.append((dataset, color))
@@ -291,13 +281,10 @@ def make_opera_granule_map(results_dict, args):
     folium.LayerControl().add_to(map_object)
 
     # Add legend
-    from branca.element import MacroElement
-    from jinja2 import Template
-
     legend_html = """
     {% macro html(this, kwargs) %}
-    <div style="position: fixed; 
-                bottom: 50px; left: 50px; width: 220px; height: auto; 
+    <div style="position: fixed;
+                bottom: 50px; left: 50px; width: 220px; height: auto;
                 z-index:9999; font-size:14px;
                 background-color: white;
                 padding: 10px;
@@ -306,7 +293,10 @@ def make_opera_granule_map(results_dict, args):
     <b>OPERA Products</b><br>
     {% for name, color in this.legend_items %}
         <div style="margin-bottom:4px">
-            <span style="display:inline-block;width:12px;height:12px;background-color:{{ color }};margin-right:6px"></span>{{ name }}
+            <span style="display:inline-block; width:12px; height:12px;
+                        background-color:{{ color }}; margin-right:6px">
+            </span>
+            {{ name }}
         </div>
     {% endfor %}
     </div>
@@ -324,10 +314,3 @@ def make_opera_granule_map(results_dict, args):
     # Save map
     map_object.save(output_file)
     print(f"-> OPERA granules Map successfully saved to {output_file}")
-
-
-
-
-    
-
-
