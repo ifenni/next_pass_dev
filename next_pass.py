@@ -12,6 +12,11 @@ from sentinel_pass import (
     create_s2_collection_plan,
 )
 from utils import bbox_type, create_polygon_from_kml
+from opera_products import (
+    find_print_available_opera_products,
+    export_opera_products,
+    make_opera_granule_map,
+)
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -42,7 +47,8 @@ def create_parser() -> argparse.ArgumentParser:
         required=True,
         nargs="+",
         type=str,
-        help="Bounding box: Either 2 or 4 floats (point or bbox) or a path to a .kml location file",
+        help=("Bounding box: Either 2 or 4 floats (point or bbox) "
+              "or a path to a .kml location file"),
     )
     parser.add_argument(
         "-s",
@@ -50,6 +56,13 @@ def create_parser() -> argparse.ArgumentParser:
         default="all",
         choices=["sentinel-1", "sentinel-2", "landsat", "all"],
         help="Satellite mission. Default is all.",
+    )
+    parser.add_argument(
+        "-n",
+        "--number-of-dates",
+        default=5,
+        type=int,
+        help="Number of most recent dates to consider for OPERA products",
     )
     parser.add_argument(
         "-l",
@@ -127,12 +140,18 @@ def main():
         # Case: satellite == all
         for mission, mission_result in result.items():
             print(f"\n=== {mission.upper()} ===")
-            print(
-                mission_result.get("next_collect_info", "No collection info available.")
+            print(mission_result.get("next_collect_info",
+                                     "No collection info available.")
             )
     else:
         # Case: only one satellite selected
         print(result.get("next_collect_info", "No collection info available."))
+
+    # search for & print OPERA results
+    results_opera = find_print_available_opera_products(args.bbox,
+                                                        args.number_of_dates)
+    export_opera_products(results_opera)
+    make_opera_granule_map(results_opera, args.bbox)
 
 
 if __name__ == "__main__":
