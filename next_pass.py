@@ -62,7 +62,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--number-of-dates",
         default=5,
         type=int,
-        help="Number of most recent granules to consider for OPERA products",
+        help="Number of most recent dates to consider for OPERA products",
     )
     parser.add_argument(
         "-l",
