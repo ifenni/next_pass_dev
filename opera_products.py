@@ -1,43 +1,39 @@
+import csv
 import logging
 import time
-import csv
 from datetime import date
-from dateutil.relativedelta import relativedelta
-import leafmap
+
 import folium
-from matplotlib.colors import to_hex
+import leafmap
 import matplotlib.pyplot as plt
 import pandas as pd
 from branca.element import MacroElement
+from dateutil.relativedelta import relativedelta
 from jinja2 import Template
-from utils import create_polygon_from_kml, bbox_type
+from matplotlib.colors import to_hex
 
+from utils import bbox_type, create_polygon_from_kml
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
-# Base URLs
-EARTH_DATA_URL = (
-    "https://github.com/opengeos/NASA-Earth-Data/raw/main/nasa_earth_data.tsv"
-)
+LOGGER = logging.getLogger(__name__)
 
 
-def find_print_available_opera_products(args) -> dict:
+def find_print_available_opera_products(bbox, number_of_dates) -> dict:
     opera_datasets = [
-        'OPERA_L3_DSWX-HLS_V1',
-        'OPERA_L3_DSWX-S1_V1',
-        'OPERA_L3_DIST-ALERT-HLS_V1',
-        'OPERA_L3_DIST-ANN-HLS_V1',
-        'OPERA_L2_RTC-S1_V1',
-        'OPERA_L2_CSLC-S1_V1',
-        'OPERA_L3_DISP-S1_V1'
+        "OPERA_L3_DSWX-HLS_V1",
+        "OPERA_L3_DSWX-S1_V1",
+        "OPERA_L3_DIST-ALERT-HLS_V1",
+        "OPERA_L3_DIST-ANN-HLS_V1",
+        "OPERA_L2_RTC-S1_V1",
+        "OPERA_L2_CSLC-S1_V1",
+        "OPERA_L3_DISP-S1_V1",
     ]
 
     # Parse the bbox argument
-    bbox = bbox_type(args.bbox)
+    bbox = bbox_type(bbox)
 
     if isinstance(bbox, str):
         # Create geometry from KML file
@@ -56,10 +52,9 @@ def find_print_available_opera_products(args) -> dict:
     EndDate_Recent = today.strftime("%Y-%m-%d") + "T23:59:59"
 
     results_dict = {}
-    ng = args.ngr
-    print("\n** Available OPERA Products for Selected AOI **\n")
+    LOGGER.info("\n** Available OPERA Products for Selected AOI **\n")
     for dataset in opera_datasets:
-        print(f"* Searching {dataset} ...")
+        LOGGER.info(f"* Searching {dataset} ...")
 
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
@@ -73,75 +68,45 @@ def find_print_available_opera_products(args) -> dict:
                 )
 
                 if gdf is not None and not gdf.empty:
-                    # select most recent ng gdf elements
+                    gdf = gdf.copy()
                     gdf["original_index"] = gdf.index
-                    gdf["BeginningDateTime"] = pd.to_datetime(
-                                                gdf["BeginningDateTime"]
-                                                )
-                    gdf = gdf.sort_values("BeginningDateTime",
-                                          ascending=False).head(ng)
-                    gdf["BeginningDateTime"] = (
-                        gdf["BeginningDateTime"].dt.strftime(
-                            "%Y-%m-%dT%H:%M:%SZ"
-                            )
+                    gdf["BeginningDateTime"] = pd.to_datetime(gdf["BeginningDateTime"])
+
+                    # Extract unique acquisition dates
+                    gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
+                    unique_dates = gdf.sort_values(
+                        "BeginningDateTime", ascending=False
+                    )["AcqDate"].unique()
+                    selected_dates = unique_dates[:number_of_dates]
+
+                    # Keep all granules that match selected dates
+                    gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
+
+                    # Final formatting
+                    gdf["BeginningDateTime"] = gdf["BeginningDateTime"].dt.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
                     )
                     results = [results[k] for k in gdf["original_index"]]
-                    gdf = gdf.drop(columns="original_index")
-                    print(
-                        f"-> Success: {dataset} → "
-                        f"{len(gdf)} granule(s) saved."
-                    )
+                    gdf = gdf.drop(columns=["original_index", "AcqDate"])
+                    LOGGER.info(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
                     results_dict[dataset] = {
                         "results": results,
                         "gdf": gdf,
                     }
                     break
                 else:
-                    print(f"xxx Attempt {attempt}: No granules for {dataset}.")
+                    LOGGER.info(f"xxx Attempt {attempt}: No granules for {dataset}.")
             except Exception as e:
-                print(
-                    f"xxx Attempt {attempt}:"
-                    f" Error fetching {dataset}: {str(e)}"
-                    )
+                LOGGER.info(
+                    f"xxx Attempt {attempt}:" f" Error fetching {dataset}: {str(e)}"
+                )
 
             if attempt < max_attempts:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
-                print(
-                    f"-> Failed to fetch {dataset}"
-                    f" after {max_attempts} attempts."
-                    )
-
-    # output relevant information (Granule ID, Time Range and Download URL)
-    print(
-        f"\n** Relevant information about the {len(gdf)} "
-        f"saved granule(s) per OPERA product :  **"
-        )
-    for dataset, data in results_dict.items():
-        print(f"\n*** Dataset: {dataset} ************************")
-        for i, item in enumerate(data["results"], start=1):
-            umm = item["umm"]
-
-            granule_id = umm.get("GranuleUR", "N/A")
-            temporal = umm.get("TemporalExtent", {})
-            start_time = temporal.get("RangeDateTime", {}).get(
-                "BeginningDateTime", "N/A"
+                LOGGER.info(
+                    f"-> Failed to fetch {dataset}" f" after {max_attempts} attempts."
                 )
-            end_time = temporal.get("RangeDateTime", {}).get(
-                "EndingDateTime", "N/A"
-                )
-
-            # Extract download URL
-            download_url = "N/A"
-            for url_entry in umm.get("RelatedUrls", []):
-                if url_entry.get("Type") == "GET DATA":
-                    download_url = url_entry.get("URL", "N/A")
-                    break
-
-            print(f"-- Granule #{i}")
-            print(f"+ Granule ID: {granule_id}")
-            print(f"+ Time Range: {start_time} → {end_time}")
-            print(f"+ Download URL: {download_url}")
 
     return results_dict
 
@@ -151,9 +116,9 @@ def export_opera_products(results_dict):
     output_file = "opera_products_metadata.csv"
     with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow([
-            "Dataset", "Granule ID", "Start Time", "End Time", "Download URL"]
-            )
+        writer.writerow(
+            ["Dataset", "Granule ID", "Start Time", "End Time", "Download URL"]
+        )
 
         for dataset, data in results_dict.items():
             for item in data["results"]:
@@ -162,10 +127,10 @@ def export_opera_products(results_dict):
                 temporal = umm.get("TemporalExtent", {})
                 start_time = temporal.get("RangeDateTime", {}).get(
                     "BeginningDateTime", "N/A"
-                    )
+                )
                 end_time = temporal.get("RangeDateTime", {}).get(
                     "EndingDateTime", "N/A"
-                    )
+                )
 
                 download_url = "N/A"
                 for url_entry in umm.get("RelatedUrls", []):
@@ -175,14 +140,14 @@ def export_opera_products(results_dict):
 
                 writer.writerow(
                     [dataset, granule_id, start_time, end_time, download_url]
-                    )
-    print(
+                )
+    LOGGER.info(
         "\n-> OPERA products metadata successfully saved"
         "to opera_granule_metadata.csv"
-        )
+    )
 
 
-def make_opera_granule_map(results_dict, args):
+def make_opera_granule_map(results_dict, bbox):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
@@ -190,7 +155,7 @@ def make_opera_granule_map(results_dict, args):
     output_file = "opera_products_map.html"
 
     # Parse AOI center for initial map centering
-    bbox = bbox_type(args.bbox)
+    bbox = bbox_type(bbox)
     if isinstance(bbox, str):
         geometry = create_polygon_from_kml(bbox)
         AOI = geometry.bounds
@@ -215,14 +180,14 @@ def make_opera_granule_map(results_dict, args):
     for i, (dataset, data) in enumerate(results_dict.items()):
         gdf = data.get("gdf")
         if gdf is None or gdf.empty:
-            print(f"Skipping {dataset}: empty or missing GeoDataFrame.")
+            LOGGER.info(f"Skipping {dataset}: empty or missing GeoDataFrame.")
             continue
 
         gdf = gdf.copy()
         if i < 4:
-            pos_delta = 0.08*(i-1)
+            pos_delta = 0.08 * (i - 1)
         else:
-            pos_delta = 0.08*(i-5)
+            pos_delta = 0.08 * (i - 5)
         # Add download URL and name for popup
         for idx, item in enumerate(data["results"]):
             try:
@@ -235,7 +200,7 @@ def make_opera_granule_map(results_dict, args):
                 label = umm.get("GranuleUR", "OPERA Granule")
 
             except Exception as e:
-                print(f"Unexpected error: {e}")
+                LOGGER.info(f"Unexpected error: {e}")
                 download_url = "URL not available"
                 label = "OPERA Granule"
 
@@ -254,7 +219,7 @@ def make_opera_granule_map(results_dict, args):
         folium.GeoJson(
             gdf.__geo_interface__,
             name=dataset,
-            style_function=lambda x, style=style: style
+            style_function=lambda x, style=style: style,
         ).add_to(map_object)
 
         # Add popup markers
@@ -268,11 +233,11 @@ def make_opera_granule_map(results_dict, args):
             """
             # Use icon_color in folium.Icon for each marker
             folium.Marker(
-                location=[centroid.y+pos_delta, centroid.x+pos_delta],
+                location=[centroid.y + pos_delta, centroid.x + pos_delta],
                 popup=folium.Popup(popup_html, max_width=400),
-                icon=folium.Icon(color="lightgray",
-                                 icon_color=color, icon="cloud-download"
-                                 )
+                icon=folium.Icon(
+                    color="lightgray", icon_color=color, icon="cloud-download"
+                ),
             ).add_to(map_object)
 
         legend_entries.append((dataset, color))
@@ -313,4 +278,4 @@ def make_opera_granule_map(results_dict, args):
 
     # Save map
     map_object.save(output_file)
-    print(f"-> OPERA granules Map successfully saved to {output_file}")
+    LOGGER.info(f"-> OPERA granules Map successfully saved to {output_file}")
