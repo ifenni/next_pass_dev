@@ -47,8 +47,8 @@ def create_parser() -> argparse.ArgumentParser:
         required=True,
         nargs="+",
         type=str,
-        help="Bounding box: Either 2 or 4 floats (point or bbox) "
-        "or a path to a .kml location file",
+        help=("Bounding box: Either 2 or 4 floats (point or bbox) "
+              "or a path to a .kml location file"),
     )
     parser.add_argument(
         "-s",
@@ -59,10 +59,10 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-n",
-        "--ngr",
+        "--number-of-dates",
         default=5,
         type=int,
-        help="Number of mots recent granules to consider for OPERA products",
+        help="Number of most recent granules to consider for OPERA products",
     )
     parser.add_argument(
         "-l",
@@ -140,20 +140,18 @@ def main():
         # Case: satellite == all
         for mission, mission_result in result.items():
             print(f"\n=== {mission.upper()} ===")
-            print(
-                mission_result.get(
-                    "next_collect_info",
-                    "No collection info available."
-                )
+            print(mission_result.get("next_collect_info",
+                                     "No collection info available.")
             )
     else:
         # Case: only one satellite selected
         print(result.get("next_collect_info", "No collection info available."))
 
     # search for & print OPERA results
-    results_opera = find_print_available_opera_products(args)
+    results_opera = find_print_available_opera_products(args.bbox,
+                                                        args.number_of_dates)
     export_opera_products(results_opera)
-    make_opera_granule_map(results_opera, args)
+    make_opera_granule_map(results_opera, args.bbox)
 
 
 if __name__ == "__main__":
