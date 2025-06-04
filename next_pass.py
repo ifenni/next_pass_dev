@@ -14,9 +14,13 @@ from sentinel_pass import (
 from utils import bbox_type, create_polygon_from_kml
 from opera_products import (
     find_print_available_opera_products,
-    export_opera_products,
-    make_opera_granule_map,
+    export_opera_products
 )
+from plot_maps import (
+    make_opera_granule_map,
+    make_overpasses_map
+)
+
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -63,6 +67,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=5,
         type=int,
         help="Number of most recent dates to consider for OPERA products",
+    )
+    parser.add_argument(
+        "-d",
+        "--event-date",
+        default="today",
+        type=str,
+        help="Date of the event to consider for OPERA products",
     )
     parser.add_argument(
         "-l",
@@ -136,20 +147,25 @@ def main():
 
     result = find_next_overpass(args)
 
+    result_s1 = result["sentinel-1"]
+    result_s2 = result["sentinel-2"]
+    result_l = result["landsat"]
+    make_overpasses_map(result_s1, result_s2, result_l, args.bbox)
+
     if isinstance(result, dict) and "sentinel-1" in result:
         # Case: satellite == all
         for mission, mission_result in result.items():
             print(f"\n=== {mission.upper()} ===")
             print(mission_result.get("next_collect_info",
-                                     "No collection info available.")
-            )
+                                     "No collection info available."))
     else:
         # Case: only one satellite selected
         print(result.get("next_collect_info", "No collection info available."))
 
     # search for & print OPERA results
     results_opera = find_print_available_opera_products(args.bbox,
-                                                        args.number_of_dates)
+                                                        args.number_of_dates,
+                                                        args.event_date)
     export_opera_products(results_opera)
     make_opera_granule_map(results_opera, args.bbox)
 
