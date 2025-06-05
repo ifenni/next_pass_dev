@@ -137,8 +137,13 @@ def export_opera_products(results_dict):
                     if url_entry.get("Type") == "GET DATA":
                         download_url = url_entry.get("URL", "N/A")
                         if dataset == 'OPERA_L3_DSWX-S1_V1':
-                            download_url_bwtr = related_urls[i+2].get("URL", "N/A")
-                        break
+                            # Look ahead for the next related URL that contains 'BWTR'
+                            for j in range(i + 1, len(related_urls)):
+                                next_url_entry = related_urls[j]
+                                if 'BWTR' in next_url_entry.get("URL", ""):
+                                    download_url_bwtr = next_url_entry.get("URL", "N/A")
+                                    break
+                        break 
                 writer.writerow(
                     [dataset, granule_id, start_time,
                      end_time, download_url, download_url_bwtr]
