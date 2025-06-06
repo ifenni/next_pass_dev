@@ -216,25 +216,18 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox):
     """
     output_file = "satellite_overpasses_map.html"
 
-    # Dictionary to iterate through satellites
-    s1_next_collect_info = result_s1.get("next_collect_info",
-                                         "No collection info available")
-    s2_next_collect_info = result_s2.get("next_collect_info",
-                                         "No collection info available")
-    l_next_collect_info = result_l.get("next_collect_info",
-                                       "No collection info available")
-    s1_next_collect_geometry = result_s1.get("next_collect_geometry", None)
-    s2_next_collect_geometry = result_s2.get("next_collect_geometry", None)
-    l_next_collect_geometry = result_l.get("next_collect_geometry", None)
+    satellite_results = {
+        "Sentinel-1": result_s1,
+        "Sentinel-2": result_s2,
+        "landsat": result_l,
+    }
+    satellites = {}
+    for name, result in satellite_results.items():
+        if result:
+            next_collect_info = result.get("next_collect_info", "No collection info available")
+            next_collect_geometry = result.get("next_collect_geometry", None)
+            satellites[name] = (next_collect_info, next_collect_geometry)
 
-    satellites = {
-                    'Sentinel-1': (s1_next_collect_info,
-                                   s1_next_collect_geometry),
-                    'Sentinel-2': (s2_next_collect_info,
-                                   s2_next_collect_geometry),
-                    'landsat': (l_next_collect_info,
-                                l_next_collect_geometry)
-                }
     # Parse AOI center for initial map centering
     bbox = bbox_type(bbox)
     if isinstance(bbox, str):
