@@ -126,7 +126,7 @@ def find_next_overpass(args) -> dict:
 
     if args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min)
+        landsat = next_landsat_pass(lat_min, lon_min, geometry)
         sentinel1 = []
         sentinel2 = []
 

@@ -26,7 +26,7 @@ mamba install -c conda-forge --yes --file requirements.txt
 Use "Run_next_pass.ipynb" 
 ```
 ```bash
-python next_pass.py -bb 34 35 -119 -117 -sat sentinel-1
-python next_pass.py -bb 34 35 -119 -117 -sat sentinel-2 -fp'../../data/KML/LA_National_Forest.kml'
-python next_pass.py -bb 34 34 -119 -119 -sat landsat
+python next_pass.py -b 34 35 -119 -117 --sat sentinel-1
+python next_pass.py -b 34 35 -119 -117 --sat sentinel-2 -fp'../../data/KML/LA_National_Forest.kml'
+python next_pass.py -b 34 34 -119 -119 --sat landsat
 ```
