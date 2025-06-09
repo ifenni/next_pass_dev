@@ -26,7 +26,12 @@ mamba install -c conda-forge --yes --file requirements.txt
 Use "Run_next_pass.ipynb" 
 ```
 ```bash
-python next_pass.py -b 34 35 -119 -117 --sat sentinel-1
-python next_pass.py -b 34 35 -119 -117 --sat sentinel-2 -fp'../../data/KML/LA_National_Forest.kml'
-python next_pass.py -b 34 34 -119 -119 --sat landsat
+Point (lat/lon pair):
+  python next_pass.py -b 34.20 -118.17
+
+Bounding Box (SNWE):
+  python next_pass.py -b 34.15 34.25 -118.20 -118.15
+
+KML File:
+  python next_pass.py -b /path/to/file.kml
 ```
