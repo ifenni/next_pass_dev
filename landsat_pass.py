@@ -170,7 +170,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
 
         return {"next_collect_info": tabulate(
             table_data,
-            headers=["Direction", "Path", "Row", "Mission", "Next Passes", "AOI % Coverage"],
+            headers=["Direction", "Path", "Row", "Mission", "Next Passes", "AOI % Overlap"],
             tablefmt="grid"
             ),
             "next_collect_geometry": geometry_data
