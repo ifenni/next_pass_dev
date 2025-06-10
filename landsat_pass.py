@@ -117,13 +117,16 @@ def find_next_landsat_pass(path: int, session: requests.Session, num_passes: int
     return next_passes
 
 
-def next_landsat_pass(lat: float, lon: float) -> None:
+def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
     """
     Main function to retrieve and display the next Landsat passes for a given location.
 
     Args:
         lat (float): Latitude.
         lon (float): Longitude.
+        geometryAOI: Geometry of the area of interest used for computing intersection percentage.
+    Returns:
+        dict: Dictionary containing next Landsat passes information and geometries.
     """
     session = requests.Session()
 
@@ -139,6 +142,14 @@ def next_landsat_pass(lat: float, lon: float) -> None:
                     row = feature["row"]
                     geometry = feature.get("geometry")
                     polygon = arcgis_to_polygon(geometry)
+
+                    if polygon and polygon.is_valid and geometryAOI.is_valid:
+                        intersection = polygon.intersection(geometryAOI)
+                        intersection_pct = 100 * (intersection.area / geometryAOI.area)
+                        intersection_str = f"{intersection_pct:.1f}%"
+                    else:
+                        intersection_str = "N/A"
+
                     next_pass_dates = find_next_landsat_pass(path, session=session, num_passes=5)
                     for mission, dates in next_pass_dates.items():
                         row_data = [
@@ -146,19 +157,20 @@ def next_landsat_pass(lat: float, lon: float) -> None:
                             path,
                             row,
                             mission.capitalize(),
-                            ", ".join(dates) if dates else "No future passes found."
+                            ", ".join(dates) if dates else "No future passes found.",
+                            intersection_str
                         ]
                         table_data.append(row_data)
                         if polygon:
                             geometry_data.append(polygon)
             else:
                 table_data.append(
-                    [direction.capitalize(), "N/A", "N/A", "N/A", "No data found."]
+                    [direction.capitalize(), "N/A", "N/A", "N/A", "No data found.", "N/A"]
                 )
 
         return {"next_collect_info": tabulate(
             table_data,
-            headers=["Direction", "Path", "Row", "Mission", "Next Passes"],
+            headers=["Direction", "Path", "Row", "Mission", "Next Passes", "AOI % Overlap"],
             tablefmt="grid"
             ),
             "next_collect_geometry": geometry_data

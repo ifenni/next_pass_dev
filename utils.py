@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from lxml import etree
 from shapely import LinearRing, Polygon, Point
+from typing import Union
 
 LOGGER = logging.getLogger('acquisition_utils')
 
@@ -108,16 +109,19 @@ def create_polygon_from_kml(kml_file: Path) -> Optional[Polygon]:
 
 def find_intersecting_collects(
     gdf: gpd.GeoDataFrame,
-    geometry: Polygon | Point,
+    geometryAOI: Union[Polygon, Point],
     mode: Optional[str] = None,
     orbit_relative: Optional[int] = None,
 ) -> gpd.GeoDataFrame:
-    intersects = gdf[gdf.intersects(geometry)]
+    intersects = gdf[gdf.intersects(geometryAOI)].copy()
+
     if mode:
         intersects = intersects[intersects['mode'] == mode]
     if orbit_relative is not None:
         intersects = intersects[intersects['orbit_relative'] == orbit_relative]
-    return intersects.sort_values('begin_date').reset_index()
+
+    intersects['intersection_pct'] = 100 * (intersects.geometry.intersection(geometryAOI).area / geometryAOI.area)
+    return intersects.sort_values(['intersection_pct', 'begin_date'], ascending=[False, True]).reset_index(drop=True)
 
 
 def bbox_type(arg_coords):
