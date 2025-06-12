@@ -40,7 +40,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         (idx + 1,
          row.begin_date.strftime("%Y-%m-%d %H:%M:%S"),
          row.orbit_relative,
-         f"{row.intersection_pct:.1f}")
+         f"{row.intersection_pct:.2f}")
         for idx, row in gdf.iterrows()
     ]
     headers = ["#", "Collection Date & Time", "Relative Orbit", "AOI % Overlap"]

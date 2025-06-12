@@ -146,7 +146,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
                     if polygon and polygon.is_valid and geometryAOI.is_valid:
                         intersection = polygon.intersection(geometryAOI)
                         intersection_pct = 100 * (intersection.area / geometryAOI.area)
-                        intersection_str = f"{intersection_pct:.1f}%"
+                        intersection_str = f"{intersection_pct:.2f}%"
                     else:
                         intersection_str = "N/A"
 
