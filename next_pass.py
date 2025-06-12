@@ -197,7 +197,7 @@ def main():
                         args.bbox,
                         args.number_of_dates,
                         args.event_date)
-        export_opera_products(results_opera,timestamp_dir)
+        export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
 
