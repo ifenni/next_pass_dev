@@ -109,9 +109,9 @@ def find_print_available_opera_products(
     return results_dict
 
 
-def export_opera_products(results_dict):
+def export_opera_products(results_dict, timestamp_dir):
     # export to csv file
-    output_file = "opera_products_metadata.csv"
+    output_file = timestamp_dir / "opera_products_metadata.csv"
     with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(
