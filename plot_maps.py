@@ -78,7 +78,7 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     else:
         lat_min, lat_max, lon_min, lon_max = bbox
         AOI = (lon_min, lat_min, lon_max, lat_max)
-        AOI_polygon = box(*AOI) 
+        AOI_polygon = box(*AOI)
 
     center_lat = (AOI[1] + AOI[3]) / 2
     center_lon = (AOI[0] + AOI[2]) / 2
@@ -168,7 +168,7 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
         # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, color))
-    
+
     # Add layer control
     folium.LayerControl().add_to(map_object)
 
@@ -224,7 +224,8 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     satellites = {}
     for name, result in satellite_results.items():
         if result:
-            next_collect_info = result.get("next_collect_info", "No collection info available")
+            next_collect_info = result.get("next_collect_info",
+                                           "No collection info available")
             next_collect_geometry = result.get("next_collect_geometry", None)
             satellites[name] = (next_collect_info, next_collect_geometry)
 
@@ -304,7 +305,7 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                             "fillOpacity": 0.3
                         },
                         popup=folium.Popup(f"{sat_name}: {info}",
-                                        max_width=300)
+                                           max_width=300)
                     ).add_to(fg)
             fg.add_to(map_object)
     # Add LayerControl to toggle on/off

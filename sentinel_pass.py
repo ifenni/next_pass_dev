@@ -43,7 +43,8 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
          f"{row.intersection_pct:.2f}")
         for idx, row in gdf.iterrows()
     ]
-    headers = ["#", "Collection Date & Time", "Relative Orbit", "AOI % Overlap"]
+    headers = ["#", "Collection Date & Time",
+               "Relative Orbit", "AOI % Overlap"]
     return tabulate(table, headers, tablefmt="grid")
 
 
@@ -56,7 +57,8 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
         geometry: Shapely geometry (Point or Polygon) to check intersects.
 
     Returns:
-        dict: Dictionary with formatted collect info, collect geometries, and percentage overlap of each collect with the input geometry (AOI).
+        dict: Dictionary with formatted collect info, collect geometries,
+        and percentage overlap of each collect with the input geometry (AOI).
     """
     try:
         gdf = gpd.read_file(create_plan_func())
@@ -69,7 +71,8 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
         }
 
     collects = find_intersecting_collects(gdf, geometry)
-    collects = collects.drop_duplicates(subset=["begin_date", "orbit_relative"])
+    collects = collects.drop_duplicates(subset=["begin_date",
+                                                "orbit_relative"])
     if not collects.empty:
         return {
             "next_collect_info": format_collects(collects),
@@ -78,6 +81,7 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
         }
     else:
         return {
-            "next_collect_info": f"No scheduled collects before {gdf['end_date'].max().date()}.",
+            "next_collect_info": f"No scheduled collects before {
+                gdf['end_date'].max().date()}.",
             "intersection_pct": None,
         }
