@@ -62,12 +62,12 @@ def hsl_distinct_colors_improved(num_colors):
     return colors
 
 
-def make_opera_granule_map(results_dict, bbox):
+def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
     """
-    output_file = "opera_products_map.html"
+    output_file = timestamp_dir / "opera_products_map.html"
 
     # Parse AOI center for initial map centering
     bbox = bbox_type(bbox)
@@ -78,7 +78,7 @@ def make_opera_granule_map(results_dict, bbox):
     else:
         lat_min, lat_max, lon_min, lon_max = bbox
         AOI = (lon_min, lat_min, lon_max, lat_max)
-        AOI_polygon = box(*AOI) 
+        AOI_polygon = box(*AOI)
 
     center_lat = (AOI[1] + AOI[3]) / 2
     center_lon = (AOI[0] + AOI[2]) / 2
@@ -168,7 +168,7 @@ def make_opera_granule_map(results_dict, bbox):
         # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, color))
-    
+
     # Add layer control
     folium.LayerControl().add_to(map_object)
 
@@ -209,12 +209,12 @@ def make_opera_granule_map(results_dict, bbox):
     return map_object
 
 
-def make_overpasses_map(result_s1, result_s2, result_l, bbox):
+def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     """
     Create an interactive map displaying Sentinel
     and Landsat overpasses
     """
-    output_file = "satellite_overpasses_map.html"
+    output_file = timestamp_dir / "satellite_overpasses_map.html"
 
     satellite_results = {
         "Sentinel-1": result_s1,
@@ -224,7 +224,8 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox):
     satellites = {}
     for name, result in satellite_results.items():
         if result:
-            next_collect_info = result.get("next_collect_info", "No collection info available")
+            next_collect_info = result.get("next_collect_info",
+                                           "No collection info available")
             next_collect_geometry = result.get("next_collect_geometry", None)
             satellites[name] = (next_collect_info, next_collect_geometry)
 
@@ -254,8 +255,6 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox):
             "fillOpacity": 0.0
         }
     ).add_to(map_object)
-    print('\n ** Visualizing overpasses',
-          'for Sentinel 1/2 and Landsat 8/9 ** \n')
     for sat_name, (info_text, geometry_list) in satellites.items():
         # Clean and split info
         lines = info_text.split("\n")
@@ -306,7 +305,7 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox):
                             "fillOpacity": 0.3
                         },
                         popup=folium.Popup(f"{sat_name}: {info}",
-                                        max_width=300)
+                                           max_width=300)
                     ).add_to(fg)
             fg.add_to(map_object)
     # Add LayerControl to toggle on/off
