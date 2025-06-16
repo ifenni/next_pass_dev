@@ -89,19 +89,20 @@ def find_print_available_opera_products(
                                                 )
                     results = [results[k] for k in gdf["original_index"]]
                     gdf = gdf.drop(columns=["original_index", "AcqDate"])
-                    LOGGER.info(f"-> Success: {dataset}",
-                                f"→ {len(gdf)} granule(s) saved.")
+                    LOGGER.info(
+                        f"-> Success: {dataset} → {len(gdf)} granule(s) saved."
+                    )
                     results_dict[dataset] = {
                         "results": results,
                         "gdf": gdf,
                     }
                     break
                 else:
-                    LOGGER.info(f"xxx Attempt {attempt}: ",
+                    LOGGER.info(f"xxx Attempt {attempt}: "
                                 f"No granules for {dataset}.")
             except Exception as e:
                 LOGGER.info(
-                    f"xxx Attempt {attempt}:",
+                    f"xxx Attempt {attempt}:"
                     f" Error fetching {dataset}: {str(e)}"
                 )
 
@@ -109,7 +110,7 @@ def find_print_available_opera_products(
                 time.sleep(2**attempt)
             else:
                 LOGGER.info(
-                    f"-> Failed to fetch {dataset}",
+                    f"-> Failed to fetch {dataset}"
                     f" after {max_attempts} attempts."
                 )
 
