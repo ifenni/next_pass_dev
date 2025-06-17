@@ -7,3 +7,4 @@ leafmap
 lxml
 rasterio
 tabulate
+yagmail
