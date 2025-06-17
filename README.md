@@ -34,4 +34,7 @@ Bounding Box (SNWE):
 
 KML File:
   python next_pass.py -b /path/to/file.kml
+
+Define a bounding box and send an email with Sentinel-1 results:
+  python next_pass.py -b 50 52 -102 -100 -s sentinel-1 --email
 ```
