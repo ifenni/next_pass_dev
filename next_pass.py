@@ -178,8 +178,7 @@ def send_email(subject, body, attachment=None):
     GMAIL_PSWD = os.environ['GMAIL_APP_PSWD']
     yag = yagmail.SMTP(GMAIL_USER,GMAIL_PSWD)
 
-    # receivers = ['cole.speed@jpl.nasa.gov', 'ines.fenni@jpl.nasa.gov', 'emre.havazli@jpl.nasa.gov']
-    receivers = ['cole.speed@jpl.nasa.gov']
+    receivers = ['cole.speed@jpl.nasa.gov', 'ines.fenni@jpl.nasa.gov', 'emre.havazli@jpl.nasa.gov']
     
     yag.send(
              bcc=receivers,
