@@ -3,6 +3,9 @@
 import argparse
 import logging
 import sys
+import datetime
+import os
+
 from shapely.geometry import Point, box
 from pathlib import Path
 from datetime import datetime
@@ -92,6 +95,11 @@ def create_parser() -> argparse.ArgumentParser:
         choices=["debug", "info", "warning", "error"],
         help="Set logging level (default: info).",
     )
+    parser.add_argument(
+        "--email",
+        action="store_true",
+        help="Send an email with the results.",
+    )
     return parser
 
 
@@ -157,6 +165,30 @@ def format_arg(bbox_arg):
     else:
         raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
 
+def send_email(subject, body, attachment=None):
+    """
+    Send an email with the next_pass information.
+    :param subject: Subject of the email.
+    :param body: Body of the email.
+    :param attachment: Optional attachment file path.
+    """
+    import yagmail
+
+    GMAIL_USER = 'aria.hazards.jpl@gmail.com'
+    GMAIL_PSWD = os.environ['GMAIL_APP_PSWD']
+    yag = yagmail.SMTP(GMAIL_USER,GMAIL_PSWD)
+
+    # receivers = ['cole.speed@jpl.nasa.gov', 'ines.fenni@jpl.nasa.gov', 'emre.havazli@jpl.nasa.gov']
+    receivers = ['cole.speed@jpl.nasa.gov']
+    
+    yag.send(
+             bcc=receivers,
+             subject=subject,
+             contents=[body],
+             attachments=[attachment]
+             )
+    return
+
 def main():
     """Main entry point."""
     args = create_parser().parse_args()
@@ -200,6 +232,19 @@ def main():
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
+    if args.email:
+        overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+            email_body = ''.join(lines[4:])
+        send_email(
+            f"Next Satellite Overpasses for {args.sat.upper()} as of {timestamp} UTC for AOI:{format_arg(args.bbox)}",
+            email_body,
+            overpasses_map
+        )
+        print('=========================================')
+        print('Alert emailed to recipients.')
+        print('=========================================')
 
 if __name__ == "__main__":
     main()
