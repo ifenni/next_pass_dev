@@ -68,7 +68,8 @@ def find_print_available_opera_products(
                 if gdf is not None and not gdf.empty:
                     gdf = gdf.copy()
                     gdf["original_index"] = gdf.index
-                    gdf["BeginningDateTime"] = pd.to_datetime(gdf["BeginningDateTime"])
+                    gdf["BeginningDateTime"] = pd.to_datetime(
+                                                gdf["BeginningDateTime"])
 
                     # Extract unique acquisition dates
                     gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
@@ -81,29 +82,36 @@ def find_print_available_opera_products(
                     gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
 
                     # Final formatting
-                    gdf["BeginningDateTime"] = gdf["BeginningDateTime"].dt.strftime(
-                        "%Y-%m-%dT%H:%M:%SZ"
-                    )
+                    gdf["BeginningDateTime"] = gdf[
+                                                "BeginningDateTime"
+                                                ].dt.strftime(
+                                                "%Y-%m-%dT%H:%M:%SZ"
+                                                )
                     results = [results[k] for k in gdf["original_index"]]
                     gdf = gdf.drop(columns=["original_index", "AcqDate"])
-                    LOGGER.info(f"-> Success: {dataset} → {len(gdf)} granule(s) saved.")
+                    LOGGER.info(
+                        f"-> Success: {dataset} → {len(gdf)} granule(s) saved."
+                    )
                     results_dict[dataset] = {
                         "results": results,
                         "gdf": gdf,
                     }
                     break
                 else:
-                    LOGGER.info(f"xxx Attempt {attempt}: No granules for {dataset}.")
+                    LOGGER.info(f"xxx Attempt {attempt}: "
+                                f"No granules for {dataset}.")
             except Exception as e:
                 LOGGER.info(
-                    f"xxx Attempt {attempt}:" f" Error fetching {dataset}: {str(e)}"
+                    f"xxx Attempt {attempt}:"
+                    f" Error fetching {dataset}: {str(e)}"
                 )
 
             if attempt < max_attempts:
                 time.sleep(2**attempt)
             else:
                 LOGGER.info(
-                    f"-> Failed to fetch {dataset}" f" after {max_attempts} attempts."
+                    f"-> Failed to fetch {dataset}"
+                    f" after {max_attempts} attempts."
                 )
 
     return results_dict
@@ -115,8 +123,9 @@ def export_opera_products(results_dict, timestamp_dir):
     with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(
-            ["Dataset", "Granule ID", "Start Time", "End Time", 
-             "Download URL WTR", "Download URL BWTR", "Download URL VEG-DIST-STATUS",
+            ["Dataset", "Granule ID", "Start Time", "End Time",
+             "Download URL WTR", "Download URL BWTR",
+             "Download URL VEG-DIST-STATUS",
              "Download URL S1A_30", "Download URL S1A_VV"]
         )
 
@@ -139,14 +148,16 @@ def export_opera_products(results_dict, timestamp_dir):
                     if url_entry.get("Type") == "GET DATA":
                         download_url = url_entry.get("URL", "N/A")
                         if dataset == 'OPERA_L3_DSWX-S1_V1':
-                            # Look ahead for the next related URL that contains 'BWTR'
+                            # Look ahead for the next related URL
+                            # that contains 'BWTR'
                             for j in range(i + 1, len(related_urls)):
                                 next_url_entry = related_urls[j]
                                 if 'BWTR' in next_url_entry.get("URL", ""):
-                                    download_url_bwtr = next_url_entry.get("URL", "N/A")
+                                    download_url_bwtr = next_url_entry.get(
+                                                        "URL", "N/A")
                                     break
-                        break 
-                
+                        break
+
                 urls = {
                     "veg": "N/A",
                     "water": "N/A",
@@ -163,7 +174,7 @@ def export_opera_products(results_dict, timestamp_dir):
                 for keyword, key in keyword_map.items():
                     if keyword in download_url:
                         urls[key] = download_url
-                        break  
+                        break
                 writer.writerow([
                     dataset, granule_id, start_time, end_time,
                     urls["water"], urls["bwater"], urls["veg"],

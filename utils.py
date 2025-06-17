@@ -17,6 +17,7 @@ from typing import Union
 
 LOGGER = logging.getLogger('acquisition_utils')
 
+
 class Tee:
     """Write to multiple streams (e.g., terminal and log file)."""
     def __init__(self, *streams):
@@ -30,6 +31,7 @@ class Tee:
     def flush(self):
         for stream in self.streams:
             stream.flush()
+
 
 def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
     """Scrape ESA website for KML download URLs."""
@@ -133,8 +135,12 @@ def find_intersecting_collects(
     if orbit_relative is not None:
         intersects = intersects[intersects['orbit_relative'] == orbit_relative]
 
-    intersects['intersection_pct'] = 100 * (intersects.geometry.intersection(geometryAOI).area / geometryAOI.area)
-    return intersects.sort_values(['intersection_pct', 'begin_date'], ascending=[False, True]).reset_index(drop=True)
+    intersects['intersection_pct'] = 100 * (
+                intersects.geometry.intersection(
+                    geometryAOI).area / geometryAOI.area)
+    return intersects.sort_values(
+                ['intersection_pct', 'begin_date'],
+                ascending=[False, True]).reset_index(drop=True)
 
 
 def bbox_type(arg_coords):
@@ -205,7 +211,8 @@ def bbox_type(arg_coords):
             "Provide either 2 or 4 float values "
             "or a path to a valid .kml file."
         )
-    
+
+
 def arcgis_to_polygon(geometry):
     rings = geometry.get("rings")
     if not rings:

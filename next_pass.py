@@ -9,7 +9,7 @@ import os
 from shapely.geometry import Point, box
 from pathlib import Path
 from datetime import datetime
-from utils import Tee  
+from utils import Tee
 
 from landsat_pass import next_landsat_pass
 from sentinel_pass import (
@@ -86,7 +86,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--functionality",
         default="both",
         type=str,
-        help="functionality of next_pass to run : overpasses or opera_search or both",
+        help="functionality to run : overpasses or opera_search or both",
     )
     parser.add_argument(
         "-l",
@@ -140,7 +140,7 @@ def find_next_overpass(args) -> dict:
         LOGGER.info("Fetching Sentinel-2 data...")
         sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry)
         sentinel1 = []
-        landsat =[]
+        landsat = []
 
     if args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
@@ -159,8 +159,13 @@ def find_next_overpass(args) -> dict:
         "Supported values: sentinel-1, sentinel-2, landsat, all."
     )
 
+
 def format_arg(bbox_arg):
-    if isinstance(bbox_arg, list) and all(isinstance(x, str) for x in bbox_arg) and len(bbox_arg) in [1, 2, 4]:
+    if (
+        isinstance(bbox_arg, list)
+        and all(isinstance(x, str) for x in bbox_arg)
+        and len(bbox_arg) in [1, 2, 4]
+    ):
         return " ".join(bbox_arg)
     else:
         raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
@@ -211,10 +216,11 @@ def main():
 
     if args.functionality in ("both", "overpasses"):
         result = find_next_overpass(args)
-        result_s1 = result["sentinel-1"] 
+        result_s1 = result["sentinel-1"]
         result_s2 = result["sentinel-2"]
         result_l = result["landsat"]
-        make_overpasses_map(result_s1, result_s2, result_l, args.bbox, timestamp_dir)
+        make_overpasses_map(result_s1, result_s2, result_l,
+                            args.bbox, timestamp_dir)
         # loop over results and display only missions that were requested
         for mission, mission_result in result.items():
             if mission_result:
