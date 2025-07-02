@@ -200,10 +200,24 @@ def send_email(subject, body, attachment=None):
              )
     return
 
-def main():
-    """Main entry point."""
-    args = create_parser().parse_args()
+def run_next_pass(bbox, satellites='all', number_of_dates=5):
+    
+    parser = create_parser()
+    cli_args = ["-b", *map(str, bbox), "-s", satellites, "-n", str(number_of_dates)]
+    args = parser.parse_args(cli_args)
+    timestamp_dir = main(args)
+    
+    return timestamp_dir
 
+def main(cli_args=None):
+    """Main entry point."""
+    if isinstance(cli_args, argparse.Namespace):
+        args = cli_args
+    elif cli_args is None:
+        args = create_parser().parse_args()
+    else:
+        args = create_parser().parse_args(cli_args)
+        
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -244,6 +258,7 @@ def main():
                         args.products)
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
+        return timestamp_dir
 
     if args.email:
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
