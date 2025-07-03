@@ -123,9 +123,10 @@ def export_opera_products(results_dict, timestamp_dir):
         writer = csv.writer(csvfile)
         writer.writerow(
             ["Dataset", "Granule ID", "Start Time", "End Time",
-             "Download URL WTR", "Download URL BWTR", "Download URL VEG-ANOM-MAX",
-             "Download URL VEG-DIST-STATUS", "Download URL VEG-DIST-DATE",
-             "Download URL VEG-DIST-CONF", "Download URL S1A_30", "Download URL S1A_VV"]
+             "Download URL WTR", "Download URL BWTR", "Download URL CONF",
+             "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
+             "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
+             "Download URL S1A_30", "Download URL S1A_VV"]
         )
 
         for dataset, data in results_dict.items():
@@ -143,6 +144,7 @@ def export_opera_products(results_dict, timestamp_dir):
                 urls = {
                     "water": "N/A",
                     "bwater": "N/A",
+                    "water_conf": "N/A",
                     "veg_anom_max": "N/A",
                     "veg_dist_status": "N/A",
                     "veg_dist_date": "N/A",
@@ -154,6 +156,7 @@ def export_opera_products(results_dict, timestamp_dir):
                 keyword_map = {
                     'B01_WTR': 'water',
                     'BWTR': 'bwater',
+                    'B03_CONF': 'water_conf',
                     'VEG-ANOM-MAX': 'veg_anom_max',
                     'VEG-DIST-STATUS': 'veg_dist_status',
                     'VEG-DIST-DATE': 'veg_dist_date',
@@ -174,9 +177,10 @@ def export_opera_products(results_dict, timestamp_dir):
                             urls[key] = url
                 writer.writerow([
                     dataset, granule_id, start_time, end_time,
-                    urls["water"], urls["bwater"], urls["veg_anom_max"],
-                    urls["veg_dist_status"], urls["veg_dist_date"],
-                    urls["veg_dist_conf"], urls["s1a_30"], urls["s1a_vv"]
+                    urls["water"], urls["bwater"], urls["water_conf"],
+                    urls["veg_anom_max"], urls["veg_dist_status"],
+                    urls["veg_dist_date"], urls["veg_dist_conf"],
+                    urls["s1a_30"], urls["s1a_vv"]
                 ])
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
