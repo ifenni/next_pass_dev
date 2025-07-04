@@ -177,6 +177,7 @@ def format_arg(bbox_arg):
     else:
         raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
 
+
 def send_email(subject, body, attachment=None):
     """
     Send an email with the next_pass information.
@@ -200,41 +201,28 @@ def send_email(subject, body, attachment=None):
              )
     return
 
+
 def run_next_pass(
     bbox,
     number_of_dates=5,
     date=None,
-    short_name=None,
-    layer_name=None,
-    mode="flood",
-    output_dir=Path("output")
+    functionality="opera_search"
     ):
     """
     Programmatic entry point for next_pass. Wraps main() and builds CLI-style args.
-
     Args:
         bbox (list[float]): [south, north, west, east]
-        satellites (str): Satellite string, default "all"
         number_of_dates (int): Number of recent dates to consider
         date (str or None): Optional date string (YYYY-MM-DD)
-        short_name (str or None): Optional short name to filter OPERA products
-        layer_name (str or None): Optional layer name (e.g. "WTR")
-        mode (str): Operation mode, e.g., "flood"
-        output_dir (Path): Directory to write output to
     """
     cli_args = [
         "-b", *map(str, bbox),
         "-n", str(number_of_dates),
-        "-m", mode,
-        "-o", str(output_dir)
+        "-f", functionality
     ]
 
     if date:
         cli_args += ["-d", date]
-    if short_name:
-        cli_args += ["-sn", short_name]
-    if layer_name:
-        cli_args += ["-l", layer_name]
 
     return main(cli_args)
 
