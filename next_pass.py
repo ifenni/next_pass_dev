@@ -200,14 +200,43 @@ def send_email(subject, body, attachment=None):
              )
     return
 
-def run_next_pass(bbox, satellites='all', number_of_dates=5):
-    
-    parser = create_parser()
-    cli_args = ["-b", *map(str, bbox), "-s", satellites, "-n", str(number_of_dates)]
-    args = parser.parse_args(cli_args)
-    timestamp_dir = main(args)
-    
-    return timestamp_dir
+def run_next_pass(
+    bbox,
+    number_of_dates=5,
+    date=None,
+    short_name=None,
+    layer_name=None,
+    mode="flood",
+    output_dir=Path("output")
+    ):
+    """
+    Programmatic entry point for next_pass. Wraps main() and builds CLI-style args.
+
+    Args:
+        bbox (list[float]): [south, north, west, east]
+        satellites (str): Satellite string, default "all"
+        number_of_dates (int): Number of recent dates to consider
+        date (str or None): Optional date string (YYYY-MM-DD)
+        short_name (str or None): Optional short name to filter OPERA products
+        layer_name (str or None): Optional layer name (e.g. "WTR")
+        mode (str): Operation mode, e.g., "flood"
+        output_dir (Path): Directory to write output to
+    """
+    cli_args = [
+        "-b", *map(str, bbox),
+        "-n", str(number_of_dates),
+        "-m", mode,
+        "-o", str(output_dir)
+    ]
+
+    if date:
+        cli_args += ["-d", date]
+    if short_name:
+        cli_args += ["-sn", short_name]
+    if layer_name:
+        cli_args += ["-l", layer_name]
+
+    return main(cli_args)
 
 def main(cli_args=None):
     """Main entry point."""
