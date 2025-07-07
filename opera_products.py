@@ -116,7 +116,6 @@ def find_print_available_opera_products(
 
     return results_dict
 
-
 def export_opera_products(results_dict, timestamp_dir):
     # export to csv file
     output_file = timestamp_dir / "opera_products_metadata.csv"
@@ -124,8 +123,9 @@ def export_opera_products(results_dict, timestamp_dir):
         writer = csv.writer(csvfile)
         writer.writerow(
             ["Dataset", "Granule ID", "Start Time", "End Time",
-             "Download URL WTR", "Download URL BWTR",
-             "Download URL VEG-DIST-STATUS",
+             "Download URL WTR", "Download URL BWTR", "Download URL CONF",
+             "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
+             "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
              "Download URL S1A_30", "Download URL S1A_VV"]
         )
 
@@ -141,43 +141,45 @@ def export_opera_products(results_dict, timestamp_dir):
                     "EndingDateTime", "N/A"
                 )
 
-                download_url = "N/A"
-                download_url_bwtr = "N/A"
-                related_urls = umm.get("RelatedUrls", [])
-                for i, url_entry in enumerate(related_urls):
-                    if url_entry.get("Type") == "GET DATA":
-                        download_url = url_entry.get("URL", "N/A")
-                        if dataset == 'OPERA_L3_DSWX-S1_V1':
-                            # Look ahead for the next related URL
-                            # that contains 'BWTR'
-                            for j in range(i + 1, len(related_urls)):
-                                next_url_entry = related_urls[j]
-                                if 'BWTR' in next_url_entry.get("URL", ""):
-                                    download_url_bwtr = next_url_entry.get(
-                                                        "URL", "N/A")
-                                    break
-                        break
-
                 urls = {
-                    "veg": "N/A",
                     "water": "N/A",
-                    "bwater": download_url_bwtr,
+                    "bwater": "N/A",
+                    "water_conf": "N/A",
+                    "veg_anom_max": "N/A",
+                    "veg_dist_status": "N/A",
+                    "veg_dist_date": "N/A",
+                    "veg_dist_conf": "N/A",
                     "s1a_30": "N/A",
                     "s1a_vv": "N/A"
                 }
+
                 keyword_map = {
-                    'VEG-DIST': 'veg',
-                    '_WTR': 'water',
+                    'B01_WTR': 'water',
+                    'BWTR': 'bwater',
+                    'B03_CONF': 'water_conf',
+                    'VEG-ANOM-MAX': 'veg_anom_max',
+                    'VEG-DIST-STATUS': 'veg_dist_status',
+                    'VEG-DIST-DATE': 'veg_dist_date',
+                    'VEG-DIST-CONF': 'veg_dist_conf',
                     'S1A_30': 's1a_30',
                     'S1A_VV': 's1a_vv'
                 }
-                for keyword, key in keyword_map.items():
-                    if keyword in download_url:
-                        urls[key] = download_url
-                        break
+                
+                related_urls = umm.get("RelatedUrls", [])
+                for url_entry in related_urls:
+                    url = url_entry.get("URL", "")
+                    if not url.startswith("https://"):
+                        continue
+                    if not (url.endswith(".tif") or url.endswith(".h5")):
+                        continue
+                    for keyword, key in keyword_map.items():
+                        if keyword in url:
+                            urls[key] = url
                 writer.writerow([
                     dataset, granule_id, start_time, end_time,
-                    urls["water"], urls["bwater"], urls["veg"],
+                    urls["water"], urls["bwater"], urls["water_conf"],
+                    urls["veg_anom_max"], urls["veg_dist_status"],
+                    urls["veg_dist_date"], urls["veg_dist_conf"],
                     urls["s1a_30"], urls["s1a_vv"]
                 ])
     LOGGER.info(
