@@ -72,6 +72,8 @@ def unique_geometry_per_orbit(collects):
     # One geometry per orbit (first unique)
     grouped["geometry"] = grouped["geometry"].apply(lambda geoms: geoms[0] if geoms else None)
 
+    # as done in format_collects, sort by intersection_pct descending
+    grouped = grouped.sort_values("intersection_pct", ascending=False).reset_index(drop=True)
     return grouped
 
 
