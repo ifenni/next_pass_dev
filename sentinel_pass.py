@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-
+import pandas as pd
 import geopandas as gpd
 from tabulate import tabulate
 
@@ -35,17 +35,44 @@ def create_s2_collection_plan() -> Path:
 
 
 def format_collects(gdf: gpd.GeoDataFrame) -> str:
-    """Format Sentinel collects into a tabulated string."""
+    gdf_sorted = gdf.sort_values("intersection_pct", ascending=False)
     table = [
         (idx + 1,
-         row.begin_date.strftime("%Y-%m-%d %H:%M:%S"),
          row.orbit_relative,
+         ", ".join(date.strftime("%Y-%m-%d %H:%M:%S") for date in row.begin_date),
          f"{row.intersection_pct:.2f}")
-        for idx, row in gdf.iterrows()
+        for idx, row in gdf_sorted.iterrows()
     ]
-    headers = ["#", "Collection Date & Time",
-               "Relative Orbit", "AOI % Overlap"]
+
+    headers = ["#", "Relative Orbit", "Collection Date & Time", "AOI % Overlap"]
     return tabulate(table, headers, tablefmt="grid")
+
+
+def unique_geometry_per_orbit(collects):
+    def first_unique_geoms(geoms):
+        seen = set()
+        unique = []
+        for g in geoms:
+            wkt = g.wkt
+            if wkt not in seen:
+                seen.add(wkt)
+                unique.append(g)
+        return unique
+
+    # Ensure dates are proper datetime
+    collects['begin_date'] = pd.to_datetime(collects['begin_date'], errors='raise')
+
+    # Group by orbit and keep dates as list of datetime
+    grouped = collects.groupby("orbit_relative").agg({
+        "begin_date": lambda dates: sorted(dates),
+        "geometry": first_unique_geoms,
+        "intersection_pct": "first"
+    }).reset_index()
+
+    # One geometry per orbit (first unique)
+    grouped["geometry"] = grouped["geometry"].apply(lambda geoms: geoms[0] if geoms else None)
+
+    return grouped
 
 
 def next_sentinel_pass(create_plan_func, geometry) -> dict:
@@ -74,14 +101,14 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
     collects = collects.drop_duplicates(subset=["begin_date",
                                                 "orbit_relative"])
     if not collects.empty:
+        grouped = unique_geometry_per_orbit(collects)
         return {
-            "next_collect_info": format_collects(collects),
-            "next_collect_geometry": collects.geometry.tolist(),
-            "intersection_pct": collects['intersection_pct'].tolist(),
+            "next_collect_info": format_collects(grouped),
+            "next_collect_geometry": grouped["geometry"].tolist(),
+            "intersection_pct": grouped["intersection_pct"].tolist(),
         }
     else:
         return {
-            "next_collect_info": f"No scheduled collects before {
-                gdf['end_date'].max().date()}.",
+            "next_collect_info": f"No scheduled collects before {gdf['end_date'].max().date()}.",
             "intersection_pct": None,
         }
