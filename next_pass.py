@@ -226,6 +226,7 @@ def run_next_pass(
 
     return main(cli_args)
 
+
 def main(cli_args=None):
     """Main entry point."""
     if isinstance(cli_args, argparse.Namespace):
@@ -290,6 +291,7 @@ def main(cli_args=None):
         print('=========================================')
         print('Alert emailed to recipients.')
         print('=========================================')
+
 
 if __name__ == "__main__":
     main()
