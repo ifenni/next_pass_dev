@@ -37,4 +37,7 @@ KML File:
 
 Define a bounding box and send an email with Sentinel-1 results:
   python next_pass.py -b 50 52 -102 -100 -s sentinel-1 --email
+
+Limit the OPERA products search to a subset given as input 
+  python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
 ```

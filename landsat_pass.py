@@ -6,8 +6,11 @@ import json
 import urllib.parse
 from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 from tabulate import tabulate
 from utils import arcgis_to_polygon
+from collections import defaultdict
+
 
 
 # Configure logging
@@ -169,8 +172,13 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
 
     try:
         results = ll2pr(geometryAOI, session=session)
-        table_data = []
+        aggregated_data = defaultdict(lambda: {
+                    "rows": set(),
+                    "overlap_pct": 0.0,
+                    "dates": None
+                })
         geometry_data = []
+        geometry_groups = defaultdict(list)
 
         for direction, features in results.items():
             if features:
@@ -184,32 +192,60 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
                         intersection = polygon.intersection(geometryAOI)
                         intersection_pct = 100 * (intersection.area
                                                   / geometryAOI.area)
-                        intersection_str = f"{intersection_pct:.2f}%"
                     else:
-                        intersection_str = "N/A"
+                        intersection_pct = 0.0
 
                     next_pass_dates = find_next_landsat_pass(path,
                                                              session=session,
                                                              num_passes=5)
                     for mission, dates in next_pass_dates.items():
-                        row_data = [
-                            direction.capitalize(),
-                            path,
-                            row,
-                            mission.capitalize(),
-                            ", ".join(dates) if dates
-                            else "No future passes found.",
-                            intersection_str
-                        ]
-                        table_data.append(row_data)
-                        if polygon:
-                            geometry_data.append(polygon)
-            else:
-                table_data.append(
-                    [direction.capitalize(), "N/A", "N/A", "N/A",
-                     "No data found.", "N/A"]
-                )
+                        key = (direction.capitalize(), path, mission.capitalize())
+                        aggregated_data[key]["rows"].add(row)
+                        aggregated_data[key]["overlap_pct"] += intersection_pct
+                        if aggregated_data[key]["dates"] is None:
+                            aggregated_data[key]["dates"] = dates
 
+                        if polygon:
+                            geometry_groups[key].append(polygon)
+            else:
+                key = (direction.capitalize(), "N/A", "N/A")
+                aggregated_data[key]["rows"].add("N/A")
+                aggregated_data[key]["dates"] = []
+                aggregated_data[key]["overlap_pct"] = 0.0
+
+        table_data = []
+        row_data_with_sortkey = []
+        row_data_with_keys = []
+        for key, data in aggregated_data.items():
+            direction, path, mission = key
+            row_list = sorted(data["rows"])
+            rows_str = ", ".join(str(r) for r in row_list)
+            overlap = data["overlap_pct"]
+            overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
+            dates_str = ", ".join(data["dates"]) if data["dates"] else "No future passes found."
+
+            row_data = [
+                direction,
+                path,
+                rows_str,
+                mission,
+                dates_str,
+                overlap_str
+            ]
+
+            # Include key for geometry ordering
+            row_data_with_keys.append((overlap, row_data, key)) 
+        
+        sorted_row_data = sorted(row_data_with_keys, key=lambda x: x[0], reverse=True)
+        table_data = [row for _, row, _ in sorted_row_data]
+        geometry_keys = [key for _, _, key in sorted_row_data]
+        
+        geometry_data = []
+        for key in geometry_keys:
+            polygons = geometry_groups.get(key, [])
+            if polygons:
+                merged = unary_union(polygons)
+                geometry_data.append(merged)
         return {"next_collect_info": tabulate(
             table_data,
             headers=["Direction", "Path", "Row", "Mission",
@@ -223,6 +259,8 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
         logging.exception(f"An unexpected error occurred: {error}")
     finally:
         session.close()
+
+
 
 
 def parse_args() -> argparse.Namespace:

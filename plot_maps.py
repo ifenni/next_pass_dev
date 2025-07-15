@@ -265,14 +265,41 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
         # Generate distinct colors
         colors = hsl_distinct_colors_improved(num_polygons)
 
-        # Handle Landsat 8/9 with odd/even row separation
+        # Handle Landsat 8/9 ascending/descending with different groups
         if "landsat" in sat_name:
-            fg_even = folium.FeatureGroup(name=f"{sat_name} 8")
-            fg_odd = folium.FeatureGroup(name=f"{sat_name} 9")
+            fg_8_asc = folium.FeatureGroup(name=f"{sat_name} 8 Ascending")
+            fg_8_desc = folium.FeatureGroup(name=f"{sat_name} 8 Descending")
+            fg_9_asc = folium.FeatureGroup(name=f"{sat_name} 9 Ascending")
+            fg_9_desc = folium.FeatureGroup(name=f"{sat_name} 9 Descending")
 
             for i, (polygon, info) in enumerate(zip(geometry_list, info_list)):
-                group = fg_even if i % 2 == 0 else fg_odd
-                color = "red" if i % 2 == 0 else "blue"
+                # Determine satellite number (8 or 9) by index or info
+                sat_num = 8 if i % 2 == 0 else 9
+
+                # Determine ascending or descending from info text
+                if re.search(r'ascending', info, re.IGNORECASE):
+                    asc_desc = 'Ascending'
+                elif re.search(r'descending', info, re.IGNORECASE):
+                    asc_desc = 'Descending'
+                else:
+                    asc_desc = 'Unknown'  
+
+                # Select the correct feature group and color
+                if sat_num == 8 and asc_desc == 'Ascending':
+                    group = fg_8_asc
+                    color = 'red'
+                elif sat_num == 8 and asc_desc == 'Descending':
+                    group = fg_8_desc
+                    color = 'darkred'
+                elif sat_num == 9 and asc_desc == 'Ascending':
+                    group = fg_9_asc
+                    color = 'blue'
+                elif sat_num == 9 and asc_desc == 'Descending':
+                    group = fg_9_desc
+                    color = 'darkblue'
+                else:
+                    group = fg_8_asc
+                    color = 'gray'
 
                 geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
                 folium.GeoJson(
@@ -286,8 +313,11 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                     popup=folium.Popup(f"{sat_name}: {info}", max_width=300)
                 ).add_to(group)
 
-            fg_even.add_to(map_object)
-            fg_odd.add_to(map_object)
+            # Add all feature groups to map
+            fg_8_asc.add_to(map_object)
+            fg_8_desc.add_to(map_object)
+            fg_9_asc.add_to(map_object)
+            fg_9_desc.add_to(map_object)
         else:
             # Other satellites (Sentinel etc.)
             fg = folium.FeatureGroup(name=sat_name)

@@ -89,8 +89,15 @@ def create_parser() -> argparse.ArgumentParser:
         help="functionality to run : overpasses or opera_search or both",
     )
     parser.add_argument(
+        "-p",
+        "--products",
+        default=[],
+        nargs="*",
+        help="A list containing a subset of OPERA products to be searched",
+    )
+    parser.add_argument(
         "-l",
-        "--log_level",
+        "--log-level",
         default="info",
         choices=["debug", "info", "warning", "error"],
         help="Set logging level (default: info).",
@@ -233,7 +240,8 @@ def main():
         results_opera = find_print_available_opera_products(
                         args.bbox,
                         args.number_of_dates,
-                        args.event_date)
+                        args.event_date,
+                        args.products)
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 

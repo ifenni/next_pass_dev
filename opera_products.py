@@ -5,8 +5,11 @@ from datetime import date, datetime
 
 import leafmap
 import pandas as pd
+from shapely.geometry import mapping
+from shapely import wkt  # Make sure this is imported
 from dateutil.relativedelta import relativedelta
 from utils import bbox_type, create_polygon_from_kml
+
 
 # Configure logging
 logging.basicConfig(
@@ -16,17 +19,29 @@ LOGGER = logging.getLogger(__name__)
 
 
 def find_print_available_opera_products(
-                                        bbox, number_of_dates, date_str
+                                        bbox, number_of_dates, 
+                                        date_str, list_of_products
                                         ) -> dict:
-    opera_datasets = [
-        "OPERA_L3_DSWX-HLS_V1",
-        "OPERA_L3_DSWX-S1_V1",
-        "OPERA_L3_DIST-ALERT-HLS_V1",
-        "OPERA_L3_DIST-ANN-HLS_V1",
-        "OPERA_L2_RTC-S1_V1",
-        "OPERA_L2_CSLC-S1_V1",
-        "OPERA_L3_DISP-S1_V1",
-    ]
+    if list_of_products:
+        prefix = "OPERA_L3_"
+        prefix_special = "OPERA_L2_"
+
+        # Apply conditional prefixing
+        opera_datasets = [
+                        (prefix_special + item) if (
+                            "RTC" in item or "CSLC" in item)
+                        else (prefix + item) for item in list_of_products
+                        ]
+    else:
+        opera_datasets = [
+                        "OPERA_L3_DSWX-HLS_V1",
+                        "OPERA_L3_DSWX-S1_V1",
+                        "OPERA_L3_DIST-ALERT-HLS_V1",
+                        "OPERA_L3_DIST-ANN-HLS_V1",
+                        "OPERA_L2_RTC-S1_V1",
+                        "OPERA_L2_CSLC-S1_V1",
+                        "OPERA_L3_DISP-S1_V1",
+                        ]
 
     # Parse the bbox argument
     bbox = bbox_type(bbox)
@@ -126,12 +141,21 @@ def export_opera_products(results_dict, timestamp_dir):
              "Download URL WTR", "Download URL BWTR", "Download URL CONF",
              "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
              "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
-             "Download URL S1A_30", "Download URL S1A_VV"]
+             "Download URL S1A_30", "Download URL S1A_VV", "Geometry (WKT)"]
         )
 
         for dataset, data in results_dict.items():
-            for item in data["results"]:
-                umm = item["umm"]
+            results = data.get("results", [])
+            gdf = data.get("gdf")
+
+            if gdf.empty:
+                LOGGER.warning(f"Skipping geometry for dataset {dataset}: No valid GeoDataFrame.")
+                geometries = [None] * len(results)
+            else:
+                geometries = list(gdf.geometry)
+                
+            for idx, item in enumerate(results):
+                umm = item.get("umm", {})
                 granule_id = umm.get("GranuleUR", "N/A")
                 temporal = umm.get("TemporalExtent", {})
                 start_time = temporal.get("RangeDateTime", {}).get(
@@ -175,12 +199,17 @@ def export_opera_products(results_dict, timestamp_dir):
                     for keyword, key in keyword_map.items():
                         if keyword in url:
                             urls[key] = url
+
+                # add geometry if available
+                geom = geometries[idx] if idx < len(geometries) else None
+                geom_wkt = geom.wkt if geom else "N/A"
+
                 writer.writerow([
                     dataset, granule_id, start_time, end_time,
                     urls["water"], urls["bwater"], urls["water_conf"],
                     urls["veg_anom_max"], urls["veg_dist_status"],
                     urls["veg_dist_date"], urls["veg_dist_conf"],
-                    urls["s1a_30"], urls["s1a_vv"]
+                    urls["s1a_30"], urls["s1a_vv"],geom_wkt
                 ])
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
