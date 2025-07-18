@@ -214,6 +214,7 @@ def run_next_pass(
         bbox (list[float]): [south, north, west, east]
         number_of_dates (int): Number of recent dates to consider
         date (str or None): Optional date string (YYYY-MM-DD)
+        functionality (str): Functionality to run: 'overpasses', 'opera_search', or 'both'
     """
     cli_args = [
         "-b", *map(str, bbox),

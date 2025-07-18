@@ -7,9 +7,8 @@ setup(
     install_requires=[],
     description="Tool to find upcoming satellite overpasses and OPERA product availability",
     author="OPERA-Cal-Val",
-    url="https://github.com/cmspeed/next_pass",
+    url="https://github.com/OPERA-Cal-Val/next_pass",
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3"
     ],
 )
