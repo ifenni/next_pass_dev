@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "next_pass"
+version = "0.1.0"
+description = "Tool to find upcoming satellite overpasses and OPERA product availability"
+authors = [
+    { name = "OPERA-Cal-Val" }
+]
+readme = ""
+requires-python = ">=3.7"
+dependencies = []  # Add any runtime dependencies here if needed
+license = {text = "MIT"}  # Update if using a different license
+classifiers = [
+    "Programming Language :: Python :: 3"
+]
+urls = { 
+    "Homepage" = "https://github.com/OPERA-Cal-Val/next_pass" 
+}
+
+[tool.setuptools]
+py-modules = [
+    "next_pass",
+    "collection_builder",
+    "landsat_pass",
+    "sentinel_pass",
+    "opera_products",
+    "plot_maps",
+    "utils"
+]

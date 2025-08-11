@@ -177,6 +177,7 @@ def format_arg(bbox_arg):
     else:
         raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
 
+
 def send_email(subject, body, attachment=None):
     """
     Send an email with the next_pass information.
@@ -200,10 +201,42 @@ def send_email(subject, body, attachment=None):
              )
     return
 
-def main():
-    """Main entry point."""
-    args = create_parser().parse_args()
 
+def run_next_pass(
+    bbox,
+    number_of_dates=5,
+    date=None,
+    functionality="opera_search"
+    ):
+    """
+    Programmatic entry point for next_pass. Wraps main() and builds CLI-style args.
+    Args:
+        bbox (list[float]): [south, north, west, east]
+        number_of_dates (int): Number of recent dates to consider
+        date (str or None): Optional date string (YYYY-MM-DD)
+        functionality (str): Functionality to run: 'overpasses', 'opera_search', or 'both'
+    """
+    cli_args = [
+        "-b", *map(str, bbox),
+        "-n", str(number_of_dates),
+        "-f", functionality
+    ]
+
+    if date:
+        cli_args += ["-d", date]
+
+    return main(cli_args)
+
+
+def main(cli_args=None):
+    """Main entry point."""
+    if isinstance(cli_args, argparse.Namespace):
+        args = cli_args
+    elif cli_args is None:
+        args = create_parser().parse_args()
+    else:
+        args = create_parser().parse_args(cli_args)
+        
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -244,6 +277,7 @@ def main():
                         args.products)
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
+        return timestamp_dir
 
     if args.email:
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
@@ -258,6 +292,7 @@ def main():
         print('=========================================')
         print('Alert emailed to recipients.')
         print('=========================================')
+
 
 if __name__ == "__main__":
     main()
