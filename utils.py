@@ -1,18 +1,17 @@
 import logging
+import requests
+import os
+import argparse
+import xml.etree.ElementTree as ET
+import geopandas as gpd
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional
 from urllib.parse import urljoin
-
-import os
-import argparse
-import xml.etree.ElementTree as ET
-
-import geopandas as gpd
-import requests
 from bs4 import BeautifulSoup
 from lxml import etree
 from shapely import LinearRing, Polygon, Point
+from shapely.geometry import shape
 from typing import Union
 
 LOGGER = logging.getLogger('acquisition_utils')
@@ -219,3 +218,28 @@ def arcgis_to_polygon(geometry):
         return None
     # Use the first ring as the exterior boundary
     return Polygon(rings[0])
+
+
+def get_spatial_extent_km(polygon_geojson):
+    # create a geodataframe from our polygon
+    geom = shape(polygon_geojson)
+    gdf = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326")
+    # Project to metric CRS (Web Mercator: EPSG 3857) to calculate in meters
+    gdf_proj = gdf.to_crs(epsg=3857)
+    
+    # Get total bounds: [minx, miny, maxx, maxy]
+    minx, miny, maxx, maxy = gdf_proj.total_bounds
+
+    # Width and height in meters
+    width_m = maxx - minx
+    height_m = maxy - miny
+
+    # Convert to kilometers
+    width_km = width_m / 1000
+    height_km = height_m / 1000
+
+    return {
+        "width_km": width_km,
+        "height_km": height_km,
+        "area_km2": gdf_proj.geometry.area.sum() / 1e6  # Optional: area in km²
+    }

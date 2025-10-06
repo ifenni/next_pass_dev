@@ -96,6 +96,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="A list containing a subset of OPERA products to be searched",
     )
     parser.add_argument(
+        "-c",
+        "--cloudiness",
+        action="store_true",
+        help="A list containing a subset of OPERA products to be searched",
+    )
+    parser.add_argument(
         "-l",
         "--log-level",
         default="info",
@@ -114,6 +120,11 @@ def find_next_overpass(args) -> dict:
     """Main logic for finding the next satellite overpasses."""
     bbox = bbox_type(args.bbox)
 
+    if args.cloudiness:
+        pred_cloudiness = 1
+    else:
+        pred_cloudiness = 0
+
     if isinstance(bbox, str):
         # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
@@ -129,23 +140,23 @@ def find_next_overpass(args) -> dict:
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry)
+        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry, pred_cloudiness)
 
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry)
+        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry, pred_cloudiness)
 
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry)
 
     if args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry)
+        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry,pred_cloudiness)
         sentinel2 = []
         landsat = []
 
     if args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry)
+        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry, pred_cloudiness)
         sentinel1 = []
         landsat = []
 
