@@ -141,7 +141,7 @@ def export_opera_products(results_dict, timestamp_dir):
              "Download URL WTR", "Download URL BWTR", "Download URL CONF",
              "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
              "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
-             "Download URL S1A_30", "Download URL S1A_VV", "Geometry (WKT)"]
+             "Download URL VV", "Download URL VH", "Geometry (WKT)"]
         )
 
         for dataset, data in results_dict.items():
@@ -173,8 +173,8 @@ def export_opera_products(results_dict, timestamp_dir):
                     "veg_dist_status": "N/A",
                     "veg_dist_date": "N/A",
                     "veg_dist_conf": "N/A",
-                    "s1a_30": "N/A",
-                    "s1a_vv": "N/A"
+                    "vv": "N/A",
+                    "vh": "N/A"
                 }
 
                 keyword_map = {
@@ -185,8 +185,8 @@ def export_opera_products(results_dict, timestamp_dir):
                     'VEG-DIST-STATUS': 'veg_dist_status',
                     'VEG-DIST-DATE': 'veg_dist_date',
                     'VEG-DIST-CONF': 'veg_dist_conf',
-                    'S1A_30': 's1a_30',
-                    'S1A_VV': 's1a_vv'
+                    'VV': 'vv',
+                    'VH': 'vh'
                 }
                 
                 related_urls = umm.get("RelatedUrls", [])
@@ -209,7 +209,7 @@ def export_opera_products(results_dict, timestamp_dir):
                     urls["water"], urls["bwater"], urls["water_conf"],
                     urls["veg_anom_max"], urls["veg_dist_status"],
                     urls["veg_dist_date"], urls["veg_dist_conf"],
-                    urls["s1a_30"], urls["s1a_vv"],geom_wkt
+                    urls["vv"], urls["vh"], geom_wkt
                 ])
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
