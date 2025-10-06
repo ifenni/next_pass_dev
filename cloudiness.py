@@ -9,7 +9,6 @@ from shapely.geometry import Polygon, Point, shape, mapping
 from dateutil.parser import parse as parse_datetime
 from datetime import datetime, timedelta
 from typing import Union, Dict, Optional, List
-from utils import get_spatial_extent_km
 
 LOGGER = logging.getLogger('cloudiness_utils')
 

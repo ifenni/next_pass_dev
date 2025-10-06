@@ -145,7 +145,8 @@ def next_sentinel_pass(create_plan_func, geometry, arg_cloudiness) -> dict:
             }).reset_index()
 
             num_rows = len(collects_grouped)
-            LOGGER.info(f"Calculating cloudiness for overpasses over {num_rows} relative orbits ...")
+            LOGGER.info(f"Calculating cloudiness for overpasses over {
+                num_rows} relative orbits ...")
             get_cloudiness_for_row = make_get_cloudiness_for_row(geometry)
             collects_grouped["cloudiness"] = collects_grouped.apply(
                 get_cloudiness_for_row, axis=1

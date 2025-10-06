@@ -140,23 +140,27 @@ def find_next_overpass(args) -> dict:
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry, pred_cloudiness)
+        sentinel1 = next_sentinel_pass(
+            create_s1_collection_plan, geometry, pred_cloudiness)
 
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry, pred_cloudiness)
+        sentinel2 = next_sentinel_pass(
+            create_s2_collection_plan, geometry, pred_cloudiness)
 
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry)
 
     if args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry,pred_cloudiness)
+        sentinel1 = next_sentinel_pass(
+            create_s1_collection_plan, geometry, pred_cloudiness)
         sentinel2 = []
         landsat = []
 
     if args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry, pred_cloudiness)
+        sentinel2 = next_sentinel_pass(
+            create_s2_collection_plan, geometry, pred_cloudiness)
         sentinel1 = []
         landsat = []
 
@@ -200,10 +204,11 @@ def send_email(subject, body, attachment=None):
 
     GMAIL_USER = 'aria.hazards.jpl@gmail.com'
     GMAIL_PSWD = os.environ['GMAIL_APP_PSWD']
-    yag = yagmail.SMTP(GMAIL_USER,GMAIL_PSWD)
+    yag = yagmail.SMTP(GMAIL_USER, GMAIL_PSWD)
 
-    receivers = ['cole.speed@jpl.nasa.gov', 'ines.fenni@jpl.nasa.gov', 'emre.havazli@jpl.nasa.gov']
-    
+    receivers = ['cole.speed@jpl.nasa.gov',
+                 'ines.fenni@jpl.nasa.gov',
+                 'emre.havazli@jpl.nasa.gov']
     yag.send(
              bcc=receivers,
              subject=subject,
@@ -218,14 +223,16 @@ def run_next_pass(
     number_of_dates=5,
     date=None,
     functionality="opera_search"
-    ):
+     ):
     """
-    Programmatic entry point for next_pass. Wraps main() and builds CLI-style args.
+    Programmatic entry point for next_pass.
+    Wraps main() and builds CLI-style args.
     Args:
         bbox (list[float]): [south, north, west, east]
         number_of_dates (int): Number of recent dates to consider
         date (str or None): Optional date string (YYYY-MM-DD)
-        functionality (str): Functionality to run: 'overpasses', 'opera_search', or 'both'
+        functionality (str): Functionality to run: 'overpasses',
+        'opera_search', or 'both'
     """
     cli_args = [
         "-b", *map(str, bbox),
@@ -247,7 +254,7 @@ def main(cli_args=None):
         args = create_parser().parse_args()
     else:
         args = create_parser().parse_args(cli_args)
-        
+
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -296,7 +303,9 @@ def main(cli_args=None):
             lines = f.readlines()
             email_body = ''.join(lines[4:])
         send_email(
-            f"Next Satellite Overpasses for {args.sat.upper()} as of {timestamp} UTC for AOI:{format_arg(args.bbox)}",
+            f"Next Satellite Overpasses for {
+                args.sat.upper()} as of {
+                    timestamp} UTC for AOI:{format_arg(args.bbox)}",
             email_body,
             overpasses_map
         )
