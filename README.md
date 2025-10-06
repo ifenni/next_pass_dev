@@ -40,4 +40,8 @@ Define a bounding box and send an email with Sentinel-1 results:
 
 Limit the OPERA products search to a subset given as input 
   python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
+
+Predict the cloudiness for next Sentinel 1/2 overpasses 
+  python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c 
+
 ```
