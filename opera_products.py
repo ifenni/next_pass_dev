@@ -140,7 +140,7 @@ def describe_cloud_cover(cover_percent):
         description = "mostly clear"
 
     return f"-> Based on OPERA HLS CLOUD layer, the scene is {
-        description}: {cover_percent:.2f}:%"
+        description}: {cover_percent:.2f}%"
 
 
 def export_opera_products(results_dict, timestamp_dir):
@@ -153,7 +153,7 @@ def export_opera_products(results_dict, timestamp_dir):
              "Download URL WTR", "Download URL BWTR", "Download URL CONF",
              "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
              "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
-             "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV", "Geometry (WKT)"],
+             "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV",
              "Download URL S1A_30", "Download URL S1A_VV",
              "CLOUD PERC (%)", "Geometry (WKT)"]
         )
@@ -244,7 +244,7 @@ def export_opera_products(results_dict, timestamp_dir):
                     urls["water"], urls["bwater"], urls["water_conf"],
                     urls["veg_anom_max"], urls["veg_dist_status"],
                     urls["veg_dist_date"], urls["veg_dist_conf"],
-                    urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"], geom_wkt
+                    urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
                     urls["s1a_30"], urls["s1a_vv"],
                     cloud_cover_percent, geom_wkt
                 ])
