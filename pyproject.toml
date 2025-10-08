@@ -16,9 +16,7 @@ license = {text = "MIT"}  # Update if using a different license
 classifiers = [
     "Programming Language :: Python :: 3"
 ]
-urls = { 
-    "Homepage" = "https://github.com/OPERA-Cal-Val/next_pass" 
-}
+urls = { "Homepage" = "https://github.com/OPERA-Cal-Val/next_pass" }
 
 [tool.setuptools]
 py-modules = [
