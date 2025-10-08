@@ -154,7 +154,6 @@ def export_opera_products(results_dict, timestamp_dir):
              "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
              "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
              "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV",
-             "Download URL S1A_30", "Download URL S1A_VV",
              "CLOUD PERC (%)", "Geometry (WKT)"]
         )
 
@@ -194,8 +193,6 @@ def export_opera_products(results_dict, timestamp_dir):
                     "rtc-vv": "N/A",
                     "rtc-vh": "N/A",
                     'cslc-vv': "N/A",
-                    "s1a_30": "N/A",
-                    "s1a_vv": "N/A",
                     "cloud": "N/A"
                 }
 
@@ -210,8 +207,6 @@ def export_opera_products(results_dict, timestamp_dir):
                     '_30_v1.0_VV': 'rtc-vv',
                     '_30_v1.0_VH': 'rtc-vh',
                     '_VV_v1.1': 'cslc-vv',
-                    'S1A_30': 's1a_30',
-                    'S1A_VV': 's1a_vv',
                     'CLOUD': 'cloud'
                 }
 
@@ -245,7 +240,6 @@ def export_opera_products(results_dict, timestamp_dir):
                     urls["veg_anom_max"], urls["veg_dist_status"],
                     urls["veg_dist_date"], urls["veg_dist_conf"],
                     urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
-                    urls["s1a_30"], urls["s1a_vv"],
                     cloud_cover_percent, geom_wkt
                 ])
 
