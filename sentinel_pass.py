@@ -5,7 +5,11 @@ import geopandas as gpd
 from tabulate import tabulate
 
 from collection_builder import build_sentinel_collection
-from utils import find_intersecting_collects, scrape_esa_download_urls
+from utils import (find_intersecting_collects,
+                   scrape_esa_download_urls)
+from cloudiness import make_get_cloudiness_for_row
+from tqdm import tqdm
+
 
 LOGGER = logging.getLogger("sentinel_pass")
 
@@ -36,15 +40,28 @@ def create_s2_collection_plan() -> Path:
 
 def format_collects(gdf: gpd.GeoDataFrame) -> str:
     gdf_sorted = gdf.sort_values("intersection_pct", ascending=False)
-    table = [
-        (idx + 1,
-         row.orbit_relative,
-         ", ".join(date.strftime("%Y-%m-%d %H:%M:%S") for date in row.begin_date),
-         f"{row.intersection_pct:.2f}")
-        for idx, row in gdf_sorted.iterrows()
-    ]
+    has_cloudiness = "cloudiness" in gdf.columns
+    table = []
+    for idx, row in gdf_sorted.iterrows():
+        base_row = [
+            idx + 1,
+            row.orbit_relative,
+            ", ".join(date.strftime("%Y-%m-%d %H:%M:%S")
+                      for date in row.begin_date),
+            f"{row.intersection_pct:.2f}"
+        ]
+        if has_cloudiness:
+            cloud_vals = [f"{val:.2f}" if val is not None else "N/A"
+                          for val in row.cloudiness
+                          ]
+            cloudiness_str = ", ".join(cloud_vals)
+            base_row.append(cloudiness_str)
+        table.append(base_row)
 
-    headers = ["#", "Relative Orbit", "Collection Date & Time", "AOI % Overlap"]
+    headers = ["#", "Relative Orbit", "Collection Date & Time",
+               "AOI % Overlap"]
+    if has_cloudiness:
+        headers.append("Cloudiness (%)")
     return tabulate(table, headers, tablefmt="grid")
 
 
@@ -59,25 +76,37 @@ def unique_geometry_per_orbit(collects):
                 unique.append(g)
         return unique
 
+    has_cloudiness = "cloudiness" in collects.columns
     # Ensure dates are proper datetime
-    collects['begin_date'] = pd.to_datetime(collects['begin_date'], errors='raise')
+    collects['begin_date'] = pd.to_datetime(
+        collects['begin_date'], errors='raise')
 
     # Group by orbit and keep dates as list of datetime
-    grouped = collects.groupby("orbit_relative").agg({
-        "begin_date": lambda dates: sorted(dates),
-        "geometry": first_unique_geoms,
-        "intersection_pct": "first"
-    }).reset_index()
+    if has_cloudiness:
+        grouped = collects.groupby("orbit_relative").agg({
+            "begin_date": lambda dates: sorted(dates),
+            "geometry": first_unique_geoms,
+            "intersection_pct": "first",
+            "cloudiness": "first",
+        }).reset_index()
+    else:
+        grouped = collects.groupby("orbit_relative").agg({
+            "begin_date": lambda dates: sorted(dates),
+            "geometry": first_unique_geoms,
+            "intersection_pct": "first",
+        }).reset_index()
 
     # One geometry per orbit (first unique)
-    grouped["geometry"] = grouped["geometry"].apply(lambda geoms: geoms[0] if geoms else None)
+    grouped["geometry"] = grouped["geometry"].apply(
+        lambda geoms: geoms[0] if geoms else None)
 
     # as done in format_collects, sort by intersection_pct descending
-    grouped = grouped.sort_values("intersection_pct", ascending=False).reset_index(drop=True)
+    grouped = grouped.sort_values(
+        "intersection_pct", ascending=False).reset_index(drop=True)
     return grouped
 
 
-def next_sentinel_pass(create_plan_func, geometry) -> dict:
+def next_sentinel_pass(create_plan_func, geometry, arg_cloudiness) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
 
@@ -99,18 +128,50 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
             "intersection_pct": None,
         }
 
+    # Enable progress bar for apply (optional)
+    tqdm.pandas()
+
     collects = find_intersecting_collects(gdf, geometry)
-    collects = collects.drop_duplicates(subset=["begin_date",
-                                                "orbit_relative"])
+    collects = collects.drop_duplicates(
+        subset=["begin_date", "orbit_relative"])
+
     if not collects.empty:
-        grouped = unique_geometry_per_orbit(collects)
-        return {
-            "next_collect_info": format_collects(grouped),
-            "next_collect_geometry": grouped["geometry"].tolist(),
-            "intersection_pct": grouped["intersection_pct"].tolist(),
-        }
+        if arg_cloudiness:
+            # Group collects by orbit, aggregate timestamps as list
+            collects_grouped = collects.groupby("orbit_relative").agg({
+                "begin_date": list,
+                "geometry": "first",  # Or use union if needed
+                "intersection_pct": "mean"  # Or max
+            }).reset_index()
+
+            num_rows = len(collects_grouped)
+            LOGGER.info(f"Calculating cloudiness for overpasses over {
+                num_rows} relative orbits ...")
+            get_cloudiness_for_row = make_get_cloudiness_for_row(geometry)
+            collects_grouped["cloudiness"] = collects_grouped.apply(
+                get_cloudiness_for_row, axis=1
+            )
+
+            grouped = collects_grouped
+
+            return {
+                "next_collect_info": format_collects(grouped),
+                "next_collect_geometry": grouped["geometry"].tolist(),
+                "intersection_pct": grouped["intersection_pct"].tolist(),
+                "cloudiness": grouped["cloudiness"].tolist(),
+            }
+        else:
+            grouped = unique_geometry_per_orbit(collects)
+            return {
+                "next_collect_info": format_collects(grouped),
+                "next_collect_geometry": grouped["geometry"].tolist(),
+                "intersection_pct": grouped["intersection_pct"].tolist()
+            }
     else:
         return {
-            "next_collect_info": f"No scheduled collects before {gdf['end_date'].max().date()}.",
+            "next_collect_info": f"No scheduled collects before {
+                gdf['end_date'].max().date()}.",
             "intersection_pct": None,
+            "cloudiness": None,
         }
+

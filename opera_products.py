@@ -5,10 +5,9 @@ from datetime import date, datetime
 
 import leafmap
 import pandas as pd
-from shapely.geometry import mapping
-from shapely import wkt  # Make sure this is imported
 from dateutil.relativedelta import relativedelta
 from utils import bbox_type, create_polygon_from_kml
+from cloudiness import get_cloudiness
 
 
 # Configure logging
@@ -19,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def find_print_available_opera_products(
-                                        bbox, number_of_dates, 
+                                        bbox, number_of_dates,
                                         date_str, list_of_products
                                         ) -> dict:
     if list_of_products:
@@ -131,6 +130,19 @@ def find_print_available_opera_products(
 
     return results_dict
 
+
+def describe_cloud_cover(cover_percent):
+    if cover_percent > 75:
+        description = "mostly cloudy"
+    elif cover_percent > 50:
+        description = "partly cloudy"
+    else:
+        description = "mostly clear"
+
+    return f"-> Based on OPERA HLS CLOUD layer, the scene is {
+        description}: {cover_percent:.2f}%"
+
+
 def export_opera_products(results_dict, timestamp_dir):
     # export to csv file
     output_file = timestamp_dir / "opera_products_metadata.csv"
@@ -141,7 +153,8 @@ def export_opera_products(results_dict, timestamp_dir):
              "Download URL WTR", "Download URL BWTR", "Download URL CONF",
              "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
              "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
-             "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV", "Geometry (WKT)"]
+             "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV",
+             "CLOUD PERC (%)", "Geometry (WKT)"]
         )
 
         for dataset, data in results_dict.items():
@@ -149,11 +162,15 @@ def export_opera_products(results_dict, timestamp_dir):
             gdf = data.get("gdf")
 
             if gdf.empty:
-                LOGGER.warning(f"Skipping geometry for dataset {dataset}: No valid GeoDataFrame.")
+                LOGGER.warning(
+                    f"Skipping geometry for dataset {
+                        dataset}: No valid GeoDataFrame.")
                 geometries = [None] * len(results)
             else:
                 geometries = list(gdf.geometry)
-                
+
+            overall_cloudy_area = 0
+            overall_area = 0
             for idx, item in enumerate(results):
                 umm = item.get("umm", {})
                 granule_id = umm.get("GranuleUR", "N/A")
@@ -176,6 +193,7 @@ def export_opera_products(results_dict, timestamp_dir):
                     "rtc-vv": "N/A",
                     "rtc-vh": "N/A",
                     'cslc-vv': "N/A",
+                    "cloud": "N/A"
                 }
 
                 keyword_map = {
@@ -189,9 +207,11 @@ def export_opera_products(results_dict, timestamp_dir):
                     '_30_v1.0_VV': 'rtc-vv',
                     '_30_v1.0_VH': 'rtc-vh',
                     '_VV_v1.1': 'cslc-vv',
+                    'CLOUD': 'cloud'
                 }
-                
+
                 related_urls = umm.get("RelatedUrls", [])
+                cloud_layer_url = None  # track BAND_LAYER URL for cloudiness
                 for url_entry in related_urls:
                     url = url_entry.get("URL", "")
                     if not url.startswith("https://"):
@@ -206,14 +226,32 @@ def export_opera_products(results_dict, timestamp_dir):
                 geom = geometries[idx] if idx < len(geometries) else None
                 geom_wkt = geom.wkt if geom else "N/A"
 
+                cloud_layer_url = urls['cloud']
+                cloud_cover_percent = "N/A"
+                if cloud_layer_url and cloud_layer_url != "N/A":
+                    cloud_cover_percent, area = get_cloudiness(
+                                    cloud_layer_url
+                                    )
+                    overall_cloudy_area = overall_cloudy_area + area * cloud_cover_percent / 100.0
+                    overall_area = overall_area + area
                 writer.writerow([
                     dataset, granule_id, start_time, end_time,
                     urls["water"], urls["bwater"], urls["water_conf"],
                     urls["veg_anom_max"], urls["veg_dist_status"],
                     urls["veg_dist_date"], urls["veg_dist_conf"],
-                    urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"], geom_wkt
+                    urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
+                    cloud_cover_percent, geom_wkt
                 ])
+
+            if overall_area > 0:
+                overall_cloud_cover_percent = 100*(
+                    overall_cloudy_area/overall_area)
+                cover_description = describe_cloud_cover(
+                    overall_cloud_cover_percent)
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
-        "to opera_granule_metadata.csv"
+        " to opera_granule_metadata.csv"
+    )
+    LOGGER.info(
+        f"{cover_description}"
     )
