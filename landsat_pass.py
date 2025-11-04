@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import argparse
 import requests
 import json
@@ -109,8 +109,9 @@ def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
     return results
 
 
-def find_next_landsat_pass(path: int, session: requests.Session,
-                           num_passes: int = 5) -> dict:
+def find_next_landsat_pass(path: int, n_day_past: float, 
+                           session: requests.Session, num_passes: int = 5
+                           ) -> dict:
     """
     Find the next Landsat-8 and Landsat-9 passes for a given path.
 
@@ -132,6 +133,7 @@ def find_next_landsat_pass(path: int, session: requests.Session,
 
     next_passes = {"landsat_8": [], "landsat_9": []}
     today = date.today()
+    four_days_earlier = today - timedelta(days=n_day_past)
 
     for mission in next_passes:
         if mission not in cycles_data:
@@ -146,7 +148,7 @@ def find_next_landsat_pass(path: int, session: requests.Session,
         for date_str, details in sorted_dates:
             pass_date = datetime.strptime(date_str, "%m/%d/%Y").date()
 
-            if pass_date >= today and str(path) in details["path"].split(","):
+            if pass_date >= four_days_earlier and str(path) in details["path"].split(","):
                 next_passes[mission].append(date_str)
                 if len(next_passes[mission]) >= num_passes:
                     break
@@ -154,7 +156,8 @@ def find_next_landsat_pass(path: int, session: requests.Session,
     return next_passes
 
 
-def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
+def next_landsat_pass(lat: float, lon: float, geometryAOI,
+                      n_day_past: float) -> None:
     """
     Main function to retrieve and display the next Landsat
     passes for a given location.
@@ -196,6 +199,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
                         intersection_pct = 0.0
 
                     next_pass_dates = find_next_landsat_pass(path,
+                                                             n_day_past,
                                                              session=session,
                                                              num_passes=5)
                     for mission, dates in next_pass_dates.items():
@@ -216,13 +220,21 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
         table_data = []
         row_data_with_sortkey = []
         row_data_with_keys = []
+        DATE_FORMAT = "%m/%d/%Y"
         for key, data in aggregated_data.items():
             direction, path, mission = key
             row_list = sorted(data["rows"])
             rows_str = ", ".join(str(r) for r in row_list)
             overlap = data["overlap_pct"]
             overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
-            dates_str = ", ".join(data["dates"]) if data["dates"] else "No future passes found."
+            if data["dates"]:
+                dates_str = ", ".join(
+                    date_str + (" (P)" if datetime.strptime(
+                        date_str, DATE_FORMAT) < datetime.now() else "")
+                    for date_str in data["dates"]
+                )
+            else:
+                dates_str = "No future passes found."
 
             row_data = [
                 direction,
@@ -234,12 +246,12 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
             ]
 
             # Include key for geometry ordering
-            row_data_with_keys.append((overlap, row_data, key)) 
-        
+            row_data_with_keys.append((overlap, row_data, key))
+
         sorted_row_data = sorted(row_data_with_keys, key=lambda x: x[0], reverse=True)
         table_data = [row for _, row, _ in sorted_row_data]
         geometry_keys = [key for _, _, key in sorted_row_data]
-        
+
         geometry_data = []
         for key in geometry_keys:
             polygons = geometry_groups.get(key, [])
@@ -249,7 +261,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
         return {"next_collect_info": tabulate(
             table_data,
             headers=["Direction", "Path", "Row", "Mission",
-                     "Next Passes", "AOI % Overlap"],
+                     "Passes dates (P for past)", "AOI % Overlap"],
             tablefmt="grid"
             ),
             "next_collect_geometry": geometry_data
