@@ -1,4 +1,3 @@
-import csv
 import logging
 import time
 from datetime import date, datetime
@@ -6,7 +5,9 @@ from datetime import date, datetime
 import leafmap
 import pandas as pd
 from dateutil.relativedelta import relativedelta
-from utils import bbox_type, create_polygon_from_kml
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from utils import bbox_type, create_polygon_from_kml, is_date_in_text
 from cloudiness import get_cloudiness
 
 
@@ -143,111 +144,142 @@ def describe_cloud_cover(cover_percent):
         description}: {cover_percent:.2f}%"
 
 
-def export_opera_products(results_dict, timestamp_dir):
+def export_opera_products(results_dict, timestamp_dir, result_s1=None):
     # export to csv file
-    output_file = timestamp_dir / "opera_products_metadata.csv"
-    with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(
-            ["Dataset", "Granule ID", "Start Time", "End Time",
-             "Download URL WTR", "Download URL BWTR", "Download URL CONF",
-             "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
-             "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
-             "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV",
-             "CLOUD PERC (%)", "Geometry (WKT)"]
-        )
+    output_file = timestamp_dir / "opera_products_metadata.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OPERA Metadata"
+    # Define bold font for header
+    bold_font = Font(bold=True)
+    headers = [
+        "Dataset", "Granule ID", "Start Time", "End Time", "CLOUD PERC (%)",
+        "Download URL WTR", "Download URL BWTR", "Download URL CONF",
+        "Download URL VEG-ANOM-MAX", "Download URL VEG-DIST-STATUS",
+        "Download URL VEG-DIST-DATE", "Download URL VEG-DIST-CONF",
+        "Download URL RTC-VV", "Download URL RTC-VH", "Download URL CSLC-VV",
+        "Geometry (WKT)"
+    ]
 
-        for dataset, data in results_dict.items():
-            results = data.get("results", [])
-            gdf = data.get("gdf")
+    ws.append(headers)
 
-            if gdf.empty:
-                LOGGER.warning(
-                    f"Skipping geometry for dataset {
-                        dataset}: No valid GeoDataFrame.")
-                geometries = [None] * len(results)
-            else:
-                geometries = list(gdf.geometry)
+    # Apply bold to header cells
+    for cell in ws[1]:
+        cell.font = bold_font
+    # Freeze header row (so row 1 stays visible when scrolling)
+    ws.freeze_panes = "A2"
 
-            overall_cloudy_area = 0
-            overall_area = 0
-            for idx, item in enumerate(results):
-                umm = item.get("umm", {})
-                granule_id = umm.get("GranuleUR", "N/A")
-                temporal = umm.get("TemporalExtent", {})
-                start_time = temporal.get("RangeDateTime", {}).get(
-                    "BeginningDateTime", "N/A"
-                )
-                end_time = temporal.get("RangeDateTime", {}).get(
-                    "EndingDateTime", "N/A"
-                )
+    for dataset, data in results_dict.items():
+        results = data.get("results", [])
+        gdf = data.get("gdf")
 
-                urls = {
-                    "water": "N/A",
-                    "bwater": "N/A",
-                    "water_conf": "N/A",
-                    "veg_anom_max": "N/A",
-                    "veg_dist_status": "N/A",
-                    "veg_dist_date": "N/A",
-                    "veg_dist_conf": "N/A",
-                    "rtc-vv": "N/A",
-                    "rtc-vh": "N/A",
-                    'cslc-vv': "N/A",
-                    "cloud": "N/A"
-                }
+        if gdf.empty:
+            LOGGER.warning(
+                f"Skipping geometry for dataset {
+                    dataset}: No valid GeoDataFrame.")
+            geometries = [None] * len(results)
+        else:
+            geometries = list(gdf.geometry)
 
-                keyword_map = {
-                    'B01_WTR': 'water',
-                    'BWTR': 'bwater',
-                    'B03_CONF': 'water_conf',
-                    'VEG-ANOM-MAX': 'veg_anom_max',
-                    'VEG-DIST-STATUS': 'veg_dist_status',
-                    'VEG-DIST-DATE': 'veg_dist_date',
-                    'VEG-DIST-CONF': 'veg_dist_conf',
-                    '_30_v1.0_VV': 'rtc-vv',
-                    '_30_v1.0_VH': 'rtc-vh',
-                    '_VV_v1.1': 'cslc-vv',
-                    'CLOUD': 'cloud'
-                }
+        overall_cloudy_area = 0
+        overall_area = 0
+        for idx, item in enumerate(results):
+            umm = item.get("umm", {})
+            granule_id = umm.get("GranuleUR", "N/A")
+            temporal = umm.get("TemporalExtent", {})
+            start_time = temporal.get("RangeDateTime", {}).get(
+                "BeginningDateTime", "N/A"
+            )
+            end_time = temporal.get("RangeDateTime", {}).get(
+                "EndingDateTime", "N/A"
+            )
 
-                related_urls = umm.get("RelatedUrls", [])
-                cloud_layer_url = None  # track BAND_LAYER URL for cloudiness
-                for url_entry in related_urls:
-                    url = url_entry.get("URL", "")
-                    if not url.startswith("https://"):
-                        continue
-                    if not (url.endswith(".tif") or url.endswith(".h5")):
-                        continue
-                    for keyword, key in keyword_map.items():
-                        if keyword in url:
-                            urls[key] = url
+            urls = {
+                "water": "N/A",
+                "bwater": "N/A",
+                "water_conf": "N/A",
+                "veg_anom_max": "N/A",
+                "veg_dist_status": "N/A",
+                "veg_dist_date": "N/A",
+                "veg_dist_conf": "N/A",
+                "rtc-vv": "N/A",
+                "rtc-vh": "N/A",
+                'cslc-vv': "N/A",
+                "cloud": "N/A"
+            }
 
-                # add geometry if available
-                geom = geometries[idx] if idx < len(geometries) else None
-                geom_wkt = geom.wkt if geom else "N/A"
+            keyword_map = {
+                'B01_WTR': 'water',
+                'BWTR': 'bwater',
+                'B03_CONF': 'water_conf',
+                'VEG-ANOM-MAX': 'veg_anom_max',
+                'VEG-DIST-STATUS': 'veg_dist_status',
+                'VEG-DIST-DATE': 'veg_dist_date',
+                'VEG-DIST-CONF': 'veg_dist_conf',
+                '_30_v1.0_VV': 'rtc-vv',
+                '_30_v1.0_VH': 'rtc-vh',
+                '_VV_v1.1': 'cslc-vv',
+                'CLOUD': 'cloud'
+            }
 
-                cloud_layer_url = urls['cloud']
-                cloud_cover_percent = "N/A"
-                if cloud_layer_url and cloud_layer_url != "N/A":
-                    cloud_cover_percent, area = get_cloudiness(
-                                    cloud_layer_url
-                                    )
-                    overall_cloudy_area = overall_cloudy_area + area * cloud_cover_percent / 100.0
-                    overall_area = overall_area + area
-                writer.writerow([
-                    dataset, granule_id, start_time, end_time,
-                    urls["water"], urls["bwater"], urls["water_conf"],
-                    urls["veg_anom_max"], urls["veg_dist_status"],
-                    urls["veg_dist_date"], urls["veg_dist_conf"],
-                    urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
-                    cloud_cover_percent, geom_wkt
-                ])
+            related_urls = umm.get("RelatedUrls", [])
+            cloud_layer_url = None  # track BAND_LAYER URL for cloudiness
+            for url_entry in related_urls:
+                url = url_entry.get("URL", "")
+                if not url.startswith("https://"):
+                    continue
+                if not (url.endswith(".tif") or url.endswith(".h5")):
+                    continue
+                for keyword, key in keyword_map.items():
+                    if keyword in url:
+                        urls[key] = url
 
-            if overall_area > 0:
-                overall_cloud_cover_percent = 100*(
-                    overall_cloudy_area/overall_area)
-                cover_description = describe_cloud_cover(
-                    overall_cloud_cover_percent)
+            # add geometry if available
+            geom = geometries[idx] if idx < len(geometries) else None
+            geom_wkt = geom.wkt if geom else "N/A"
+
+            cloud_layer_url = urls['cloud']
+            cloud_cover_percent = "N/A"
+            if cloud_layer_url and cloud_layer_url != "N/A":
+                cloud_cover_percent, area = get_cloudiness(
+                                cloud_layer_url
+                                )
+                overall_cloudy_area = overall_cloudy_area + area * cloud_cover_percent / 100.0
+                overall_area = overall_area + area
+
+            # Write data row
+            ws.append([
+                dataset, granule_id, start_time, end_time, cloud_cover_percent,
+                urls["water"], urls["bwater"], urls["water_conf"],
+                urls["veg_anom_max"], urls["veg_dist_status"],
+                urls["veg_dist_date"], urls["veg_dist_conf"],
+                urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
+                geom_wkt
+            ])
+            # check date # result_s1 to know if I want to make this row bold
+            # add check depending on what satellite is needed for what data.
+            if result_s1 is not None:
+                text_s1 = result_s1.get("next_collect_info",
+                                        "No collection info available.")
+                if is_date_in_text(start_time, text_s1):
+                    last_row = ws.max_row
+                    for cell in ws[last_row][:4]:  # first 4 columns
+                        cell.font = bold_font
+
+        if overall_area > 0:
+            overall_cloud_cover_percent = 100*(
+                overall_cloudy_area/overall_area)
+            cover_description = describe_cloud_cover(
+                overall_cloud_cover_percent)
+
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column)
+        adjusted_width = min(max_length + 2, 100)  # cap width when needed
+        ws.column_dimensions[column[0].column_letter].width = adjusted_width        
+    # Save workbook
+    wb.save(output_file)
+
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
         " to opera_granule_metadata.csv"
