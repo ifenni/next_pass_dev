@@ -1,14 +1,14 @@
 import logging
+import random
+import tempfile
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Union, Dict, Optional, List
 import requests
 import rasterio
 import numpy as np
-import tempfile
-import os
-import random
 from shapely.geometry import Polygon, Point, shape, mapping
 from dateutil.parser import parse as parse_datetime
-from datetime import datetime, timedelta
-from typing import Union, Dict, Optional, List
 
 LOGGER = logging.getLogger('cloudiness_utils')
 
@@ -155,7 +155,70 @@ def get_cloudiness_at_point(
         return None
 
 
-def predict_cloudiness(
+def get_historical_cloudiness_at_point(
+        lat: float, lon: float, target_iso: str,
+        allow_nearest: bool = False) -> Optional[float]:
+    """
+    Get historical cloudiness at a single point and time.
+
+    Parameters
+    ----------
+    lat, lon : float
+        Coordinates of the point of interest
+    target_iso : str
+        Target datetime in ISO format (e.g. '2025-08-28T15:00') in UTC.
+    allow_nearest : bool, optional
+        If True, will return cloudiness for the nearest available time
+        if exact time is not found.
+    Returns
+    -------
+    cloudiness : float or None
+        Cloud cover in %, or None if not available or on API error.
+    """
+    try:
+        target_dt = parse_datetime(target_iso)
+        target_date_str = target_dt.strftime("%Y-%m-%d")
+
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": target_date_str,
+            "end_date": target_date_str,
+            "hourly": "cloudcover",
+            "timezone": "UTC"
+        }
+
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        times = data.get("hourly", {}).get("time", [])
+        clouds = data.get("hourly", {}).get("cloudcover", [])
+
+        if not times or not clouds or len(times) != len(clouds):
+            return None
+
+        # Try exact match
+        if target_iso in times:
+            idx = times.index(target_iso)
+            return clouds[idx]
+
+        # Find nearest match (optional)
+        if allow_nearest:
+            time_diffs = [abs((parse_datetime(t) - target_dt).total_seconds())
+                          for t in times]
+            min_idx = time_diffs.index(min(time_diffs))
+            return clouds[min_idx]
+
+        return None
+
+    except (requests.RequestException, KeyError, ValueError) as e:
+        print(f"Error calculating historical cloudiness using {url}: {e}")
+        return None
+
+
+def get_overpass_cloudiness(
     polygon_geojson: Dict,
     target_datetime: Union[str, datetime],
     num_samples: int = 10,
@@ -163,7 +226,8 @@ def predict_cloudiness(
     sampling_method: str = "random"  # "random" or "grid"
 ) -> Optional[float]:
     """
-    Get forecasted average cloudiness over a polygon area.
+    Get forecasted or historical average cloudiness over a polygon area,
+    depending on if the date in the past or in the future.
 
     Parameters
     ----------
@@ -203,12 +267,24 @@ def predict_cloudiness(
 
         # Query each point and collect cloudiness
         cloudiness_values = []
-        for pt in points:
-            val = get_cloudiness_at_point(pt.y, pt.x,
-                                          target_iso,
-                                          allow_nearest=allow_nearest)
-            if val is not None:
-                cloudiness_values.append(val)
+        date_format = "%Y-%m-%dT%H:%M"
+        target_f = datetime.strptime(
+                        target_iso, date_format)
+        if target_f > datetime.now():
+            for pt in points:
+                val = get_cloudiness_at_point(pt.y, pt.x,
+                                              target_iso,
+                                              allow_nearest=allow_nearest)
+                if val is not None:
+                    cloudiness_values.append(val)
+        else:
+            for pt in points:
+                val = get_historical_cloudiness_at_point(
+                                            pt.y, pt.x,
+                                            target_iso,
+                                            allow_nearest=allow_nearest)
+                if val is not None:
+                    cloudiness_values.append(val)
 
         if not cloudiness_values:
             return None
@@ -228,7 +304,7 @@ def make_get_cloudiness_for_row(aoi_polygon):
         cloudiness_vals = []
 
         for timestamp in timestamps:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             four_days_later = now + timedelta(days=4)
             fourteen_days_later = now + timedelta(days=14)
 
@@ -242,9 +318,9 @@ def make_get_cloudiness_for_row(aoi_polygon):
 
             n_samples = 200 if now <= timestamp <= four_days_later else 60
 
-            if now <= timestamp <= fourteen_days_later:
+            if timestamp <= fourteen_days_later:
                 try:
-                    cloudiness = predict_cloudiness(
+                    cloudiness = get_overpass_cloudiness(
                         polygon_geojson=geojson_geom,
                         target_datetime=timestamp,
                         num_samples=n_samples,
