@@ -25,6 +25,7 @@ SENT2_URL = (
 def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
     urls = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
+    urls += scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
     return build_sentinel_collection(
         urls, n_day_past, "sentinel1", "sentinel_1_collection.geojson", LOGGER
     )
@@ -34,7 +35,6 @@ def create_s2_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-2 acquisition plan collection."""
     urls = scrape_esa_download_urls(SENT2_URL, "sentinel-2a")
     urls += scrape_esa_download_urls(SENT2_URL, "sentinel-2b")
-    urls += scrape_esa_download_urls(SENT2_URL, "sentinel-2c")
     return build_sentinel_collection(
         urls, n_day_past, "sentinel2", "sentinel_2_collection.geojson", LOGGER
     )
