@@ -46,7 +46,7 @@ def shapely_to_esri_json(geometry: BaseGeometry) -> tuple[str, str]:
             "rings": rings,
             "spatialReference": {"wkid": 4326}
         }
-        return urllib.parse.quote(json.dumps(esri_geom)), "esriGeometryPolygon"
+        return json.dumps(esri_geom), "esriGeometryPolygon"
 
     else:
         raise ValueError("Unsupported geometry type. "
@@ -68,20 +68,29 @@ def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
     results = {"ascending": None, "descending": None}
     directions = {"ascending": "A", "descending": "D"}
 
-    geometry_str, geometry_type = shapely_to_esri_json(geometry)
+    geometry_json, geometry_type = shapely_to_esri_json(geometry)
 
     for direction, mode in directions.items():
-        query_url = (
-            f"{MAP_SERVICE_URL}query?where=MODE='{mode}'"
-            f"&geometry={geometry_str}"
-            f"&geometryType={geometry_type}"
-            "&spatialRel=esriSpatialRelIntersects"
-            "&outFields=PATH,ROW"
-            "&returnGeometry=true&f=json"
-        )
+        query_url = f"{MAP_SERVICE_URL}query"
+        params = {
+            "where": f"MODE='{mode}'",
+            "geometryType": geometry_type,
+            "spatialRel": "esriSpatialRelIntersects",
+            "outFields": "PATH,ROW",
+            "returnGeometry": "true",
+            "f": "json",
+        }
+
+        # POST request
+        payload = {"geometry": json.loads(geometry_json)}
 
         try:
-            response = session.get(query_url, timeout=10)
+            response = session.post(
+                                    query_url,
+                                    params=params,
+                                    data={"geometry": geometry_json}, 
+                                    timeout=10
+                                )
             response.raise_for_status()
             data = response.json()
 
