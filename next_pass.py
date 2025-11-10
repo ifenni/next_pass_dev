@@ -65,7 +65,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '-k', '--look-back',
         type=int,
-        default=11,
+        default=13,
         help='Number of days to look back for past overpasses'
     )
     parser.add_argument(
@@ -100,7 +100,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help="A list containing a subset of OPERA products to be searched",
+        help="Display cloudiness prediction and/or history for future and past overpasses, respectively ",
     )
     parser.add_argument(
         "-l",
@@ -130,6 +130,7 @@ def find_next_overpass(args) -> dict:
     if isinstance(bbox, str):
         # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
+        print(list(geometry.exterior.coords)[:5])
         centroid = geometry.centroid
         lat_min = centroid.y
         lon_min = centroid.x
@@ -291,7 +292,7 @@ def main(cli_args=None):
                         args.number_of_dates,
                         args.event_date,
                         args.products)
-        export_opera_products(results_opera, timestamp_dir, result_s1)
+        export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
         return timestamp_dir
 

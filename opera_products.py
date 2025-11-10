@@ -256,15 +256,6 @@ def export_opera_products(results_dict, timestamp_dir, result_s1=None):
                 urls["rtc-vv"], urls["rtc-vh"], urls["cslc-vv"],
                 geom_wkt
             ])
-            # check date # result_s1 to know if I want to make this row bold
-            # add check depending on what satellite is needed for what data.
-            if result_s1 is not None:
-                text_s1 = result_s1.get("next_collect_info",
-                                        "No collection info available.")
-                if is_date_in_text(start_time, text_s1):
-                    last_row = ws.max_row
-                    for cell in ws[last_row][:4]:  # first 4 columns
-                        cell.font = bold_font
 
         if overall_area > 0:
             overall_cloud_cover_percent = 100*(
