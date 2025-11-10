@@ -142,7 +142,7 @@ def find_next_landsat_pass(path: int, n_day_past: float,
 
     next_passes = {"landsat_8": [], "landsat_9": []}
     today = date.today()
-    four_days_earlier = today - timedelta(days=n_day_past)
+    n_days_earlier = today - timedelta(days=n_day_past)
 
     for mission in next_passes:
         if mission not in cycles_data:
@@ -157,7 +157,7 @@ def find_next_landsat_pass(path: int, n_day_past: float,
         for date_str, details in sorted_dates:
             pass_date = datetime.strptime(date_str, "%m/%d/%Y").date()
 
-            if pass_date >= four_days_earlier and str(path) in details["path"].split(","):
+            if pass_date >= n_days_earlier and str(path) in details["path"].split(","):
                 next_passes[mission].append(date_str)
                 if len(next_passes[mission]) >= num_passes:
                     break
