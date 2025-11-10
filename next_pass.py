@@ -9,15 +9,10 @@ import os
 from shapely.geometry import Point, box
 from pathlib import Path
 from datetime import datetime
-from utils import Tee
 
 from landsat_pass import next_landsat_pass
-from sentinel_pass import (
-    next_sentinel_pass,
-    create_s1_collection_plan,
-    create_s2_collection_plan,
-)
-from utils import bbox_type, create_polygon_from_kml
+from sentinel_pass import next_sentinel_pass
+from utils import Tee, bbox_type, create_polygon_from_kml
 from opera_products import (
     find_print_available_opera_products,
     export_opera_products
@@ -68,6 +63,19 @@ def create_parser() -> argparse.ArgumentParser:
         help="Satellite mission. Default is all.",
     )
     parser.add_argument(
+        '-k', '--look-back',
+        type=int,
+        default=13,
+        help='Number of days to look back for past overpasses'
+    )
+    parser.add_argument(
+        "-f",
+        "--functionality",
+        default="both",
+        type=str,
+        help="functionality to run : overpasses or opera_search or both",
+    )
+    parser.add_argument(
         "-n",
         "--number-of-dates",
         default=5,
@@ -82,13 +90,6 @@ def create_parser() -> argparse.ArgumentParser:
         help="Date of the event to consider for OPERA products",
     )
     parser.add_argument(
-        "-f",
-        "--functionality",
-        default="both",
-        type=str,
-        help="functionality to run : overpasses or opera_search or both",
-    )
-    parser.add_argument(
         "-p",
         "--products",
         default=[],
@@ -99,7 +100,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help="A list containing a subset of OPERA products to be searched",
+        help="Display cloudiness prediction and/or history for future and past overpasses, respectively ",
     )
     parser.add_argument(
         "-l",
@@ -119,6 +120,7 @@ def create_parser() -> argparse.ArgumentParser:
 def find_next_overpass(args) -> dict:
     """Main logic for finding the next satellite overpasses."""
     bbox = bbox_type(args.bbox)
+    n_day_past = args.look_back
 
     if args.cloudiness:
         pred_cloudiness = 1
@@ -128,6 +130,7 @@ def find_next_overpass(args) -> dict:
     if isinstance(bbox, str):
         # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
+        print(list(geometry.exterior.coords)[:5])
         centroid = geometry.centroid
         lat_min = centroid.y
         lon_min = centroid.x
@@ -140,33 +143,29 @@ def find_next_overpass(args) -> dict:
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(
-            create_s1_collection_plan, geometry, pred_cloudiness)
+        sentinel1 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
 
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(
-            create_s2_collection_plan, geometry, pred_cloudiness)
+        sentinel2 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
 
         LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry)
+        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
 
     if args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(
-            create_s1_collection_plan, geometry, pred_cloudiness)
+        sentinel1 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
         sentinel2 = []
         landsat = []
 
     if args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(
-            create_s2_collection_plan, geometry, pred_cloudiness)
+        sentinel2 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
         sentinel1 = []
         landsat = []
 
     if args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry)
+        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
         sentinel1 = []
         sentinel2 = []
 

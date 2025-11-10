@@ -12,3 +12,4 @@ dependencies:
   - lxml
   - rasterio
   - tabulate
+  - openpyxl>=3.1.0

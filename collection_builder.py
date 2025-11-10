@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import List
 
@@ -73,6 +73,7 @@ def sync_scratch_directory(
 
 def build_sentinel_collection(
     urls: List[str],
+    n_day_past: float,
     mission_name: str,
     out_filename: str,
     logger: logging.Logger
@@ -126,9 +127,10 @@ def build_sentinel_collection(
         logger.error("No valid GeoDataFrames created.")
         return Path()
 
+    n_days_earlier = datetime.now(timezone.utc) - timedelta(days=n_day_past)
     full_gdf = pd.concat(gdfs).drop_duplicates()
-    full_gdf['begin_date'] = pd.to_datetime(full_gdf['begin_date'])
-    full_gdf = full_gdf.loc[full_gdf['begin_date'] >= datetime.now()]
+    full_gdf['begin_date'] = pd.to_datetime(full_gdf['begin_date'], utc=True)
+    full_gdf = full_gdf.loc[full_gdf['begin_date'] >= n_days_earlier]
     full_gdf = full_gdf.sort_values('begin_date').reset_index(drop=True)
 
     try:

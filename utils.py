@@ -1,18 +1,18 @@
 import logging
-import requests
+import re
 import os
 import argparse
 import xml.etree.ElementTree as ET
-import geopandas as gpd
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup
-from lxml import etree
-from shapely import LinearRing, Polygon, Point
 from shapely.geometry import shape
-from typing import Union
+from shapely import LinearRing, Polygon, Point
+from lxml import etree
+from bs4 import BeautifulSoup
+import geopandas as gpd
+import requests
 
 LOGGER = logging.getLogger('acquisition_utils')
 
@@ -243,3 +243,37 @@ def get_spatial_extent_km(polygon_geojson):
         "height_km": height_km,
         "area_km2": gdf_proj.geometry.area.sum() / 1e6  # Optional: area in km²
     }
+
+
+def is_date_in_text(iso_date_str: str, text: str) -> bool:
+    """
+    Check if the date (YYYY-MM-DD) from an ISO timestamp
+    is present anywhere in the given text.
+
+    Handles ISO timestamps with or without milliseconds, e.g.:
+    - '2025-10-21T22:39:01.066Z'
+    - '2025-10-10T04:41:14Z'
+
+    Args:
+        iso_date_str (str): ISO timestamp string.
+        text (str): Text to search for the date.
+
+    Returns:
+        bool: True if the date exists in the text, False otherwise.
+    """
+    # Remove trailing 'Z' if present
+    iso_date_str = iso_date_str.rstrip("Z")
+
+    # Parse ISO timestamp, handle milliseconds or not
+    try:
+        parsed_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%S.%f")
+    except ValueError:
+        parsed_date = datetime.strptime(iso_date_str, "%Y-%m-%dT%H:%M:%S")
+
+    # Extract YYYY-MM-DD
+    date_only_str = parsed_date.strftime("%Y-%m-%d")
+
+    # Find all date-like patterns in the text
+    dates_in_text = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", text)
+
+    return date_only_str in dates_in_text

@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 from tabulate import tabulate
+from datetime import datetime, timezone
 
 from collection_builder import build_sentinel_collection
 from utils import (find_intersecting_collects,
@@ -21,20 +22,21 @@ SENT2_URL = (
 )
 
 
-def create_s1_collection_plan() -> Path:
+def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
     urls = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
+    urls += scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
     return build_sentinel_collection(
-        urls, "sentinel1", "sentinel_1_collection.geojson", LOGGER
+        urls, n_day_past, "sentinel1", "sentinel_1_collection.geojson", LOGGER
     )
 
 
-def create_s2_collection_plan() -> Path:
+def create_s2_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-2 acquisition plan collection."""
     urls = scrape_esa_download_urls(SENT2_URL, "sentinel-2a")
     urls += scrape_esa_download_urls(SENT2_URL, "sentinel-2b")
     return build_sentinel_collection(
-        urls, "sentinel2", "sentinel_2_collection.geojson", LOGGER
+        urls, n_day_past, "sentinel2", "sentinel_2_collection.geojson", LOGGER
     )
 
 
@@ -46,7 +48,8 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         base_row = [
             idx + 1,
             row.orbit_relative,
-            ", ".join(date.strftime("%Y-%m-%d %H:%M:%S")
+            ", ".join(date.strftime("%Y-%m-%d %H:%M:%S") + (
+                " (P)" if date < datetime.now(timezone.utc) else "")
                       for date in row.begin_date),
             f"{row.intersection_pct:.2f}"
         ]
@@ -58,7 +61,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
             base_row.append(cloudiness_str)
         table.append(base_row)
 
-    headers = ["#", "Relative Orbit", "Collection Date & Time",
+    headers = ["#", "Relative Orbit", "Collection Date & Time (P for past)",
                "AOI % Overlap"]
     if has_cloudiness:
         headers.append("Cloudiness (%)")
@@ -106,7 +109,7 @@ def unique_geometry_per_orbit(collects):
     return grouped
 
 
-def next_sentinel_pass(create_plan_func, geometry, arg_cloudiness) -> dict:
+def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
 
@@ -119,7 +122,7 @@ def next_sentinel_pass(create_plan_func, geometry, arg_cloudiness) -> dict:
         and percentage overlap of each collect with the input geometry (AOI).
     """
     try:
-        gdf = gpd.read_file(create_plan_func())
+        gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
     except (IOError, OSError) as e:
         LOGGER.error(f"Error reading Sentinel plan file: {e}")
         return {
@@ -138,11 +141,13 @@ def next_sentinel_pass(create_plan_func, geometry, arg_cloudiness) -> dict:
     if not collects.empty:
         if arg_cloudiness:
             # Group collects by orbit, aggregate timestamps as list
-            collects_grouped = collects.groupby("orbit_relative").agg({
-                "begin_date": list,
-                "geometry": "first",  # Or use union if needed
-                "intersection_pct": "mean"  # Or max
-            }).reset_index()
+            collects_grouped = collects.groupby(
+                "orbit_relative", sort=False
+                ).agg({
+                        "begin_date": list,
+                        "geometry": "first",  # Or use union if needed
+                        "intersection_pct": "mean"  # Or max
+                    }).reset_index()
 
             num_rows = len(collects_grouped)
             LOGGER.info(f"Calculating cloudiness for overpasses over {
