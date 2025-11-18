@@ -1,22 +1,20 @@
-import logging
-from datetime import date, datetime, timedelta
 import argparse
-import requests
 import json
-import urllib.parse
+import logging
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+
+import requests
 from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
+
 from utils import arcgis_to_polygon
-from collections import defaultdict
-
-
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # Base URLs
@@ -42,15 +40,13 @@ def shapely_to_esri_json(geometry: BaseGeometry) -> tuple[str, str]:
         coords = list(geometry.exterior.coords)
         # Ensure list of [ [lon, lat], ... ]
         rings = [[[x, y] for x, y in coords]]
-        esri_geom = {
-            "rings": rings,
-            "spatialReference": {"wkid": 4326}
-        }
+        esri_geom = {"rings": rings, "spatialReference": {"wkid": 4326}}
         return json.dumps(esri_geom), "esriGeometryPolygon"
 
     else:
-        raise ValueError("Unsupported geometry type. "
-                         "Only Point and Polygon are supported.")
+        raise ValueError(
+            "Unsupported geometry type. Only Point and Polygon are supported."
+        )
 
 
 def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
@@ -81,16 +77,10 @@ def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
             "f": "json",
         }
 
-        # POST request
-        payload = {"geometry": json.loads(geometry_json)}
-
         try:
             response = session.post(
-                                    query_url,
-                                    params=params,
-                                    data={"geometry": geometry_json}, 
-                                    timeout=10
-                                )
+                query_url, params=params, data={"geometry": geometry_json}, timeout=10
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -102,25 +92,29 @@ def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
             for feature in data["features"]:
                 attributes = feature["attributes"]
                 geometry = feature.get("geometry")
-                features.append({
-                    "path": attributes["PATH"],
-                    "row": attributes["ROW"],
-                    "geometry": geometry
-                })
+                features.append(
+                    {
+                        "path": attributes["PATH"],
+                        "row": attributes["ROW"],
+                        "geometry": geometry,
+                    }
+                )
 
             results[direction] = features
 
         except requests.RequestException as error:
-            logging.error(f"Error fetching data for {direction.capitalize()}"
-                          f"direction: {error}")
+            logging.error(
+                f"Error fetching data for {direction.capitalize()}"
+                f"direction: {error}"
+            )
             results[direction] = None
 
     return results
 
 
-def find_next_landsat_pass(path: int, n_day_past: float, 
-                           session: requests.Session, num_passes: int = 5
-                           ) -> dict:
+def find_next_landsat_pass(
+    path: int, n_day_past: float, session: requests.Session, num_passes: int = 5
+) -> dict:
     """
     Find the next Landsat-8 and Landsat-9 passes for a given path.
 
@@ -151,7 +145,7 @@ def find_next_landsat_pass(path: int, n_day_past: float,
 
         sorted_dates = sorted(
             cycles_data[mission].items(),
-            key=lambda x: datetime.strptime(x[0], "%m/%d/%Y")
+            key=lambda x: datetime.strptime(x[0], "%m/%d/%Y"),
         )
 
         for date_str, details in sorted_dates:
@@ -165,8 +159,7 @@ def find_next_landsat_pass(path: int, n_day_past: float,
     return next_passes
 
 
-def next_landsat_pass(lat: float, lon: float, geometryAOI,
-                      n_day_past: float) -> None:
+def next_landsat_pass(lat: float, lon: float, geometryAOI, n_day_past: float) -> None:
     """
     Main function to retrieve and display the next Landsat
     passes for a given location.
@@ -184,11 +177,9 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
 
     try:
         results = ll2pr(geometryAOI, session=session)
-        aggregated_data = defaultdict(lambda: {
-                    "rows": set(),
-                    "overlap_pct": 0.0,
-                    "dates": None
-                })
+        aggregated_data = defaultdict(
+            lambda: {"rows": set(), "overlap_pct": 0.0, "dates": None}
+        )
         geometry_data = []
         geometry_groups = defaultdict(list)
 
@@ -200,17 +191,17 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
                     geometry = feature.get("geometry")
                     polygon = arcgis_to_polygon(geometry)
 
-                    if polygon and polygon.is_valid and geometryAOI.is_valid:
+                    if geometryAOI.type == "Point":
+                        intersection_pct = 100
+                    elif polygon and polygon.is_valid and geometryAOI.is_valid:
                         intersection = polygon.intersection(geometryAOI)
-                        intersection_pct = 100 * (intersection.area
-                                                  / geometryAOI.area)
+                        intersection_pct = 100 * (intersection.area / geometryAOI.area)
                     else:
                         intersection_pct = 0.0
 
-                    next_pass_dates = find_next_landsat_pass(path,
-                                                             n_day_past,
-                                                             session=session,
-                                                             num_passes=5)
+                    next_pass_dates = find_next_landsat_pass(
+                        path, n_day_past, session=session, num_passes=5
+                    )
                     for mission, dates in next_pass_dates.items():
                         key = (direction.capitalize(), path, mission.capitalize())
                         aggregated_data[key]["rows"].add(row)
@@ -227,7 +218,6 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
                 aggregated_data[key]["overlap_pct"] = 0.0
 
         table_data = []
-        row_data_with_sortkey = []
         row_data_with_keys = []
         DATE_FORMAT = "%m/%d/%Y"
         for key, data in aggregated_data.items():
@@ -238,21 +228,18 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
             overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
             if data["dates"]:
                 dates_str = ", ".join(
-                    date_str + (" (P)" if datetime.strptime(
-                        date_str, DATE_FORMAT) < datetime.now() else "")
+                    date_str
+                    + (
+                        " (P)"
+                        if datetime.strptime(date_str, DATE_FORMAT) < datetime.now()
+                        else ""
+                    )
                     for date_str in data["dates"]
                 )
             else:
                 dates_str = "No future passes found."
 
-            row_data = [
-                direction,
-                path,
-                rows_str,
-                mission,
-                dates_str,
-                overlap_str
-            ]
+            row_data = [direction, path, rows_str, mission, dates_str, overlap_str]
 
             # Include key for geometry ordering
             row_data_with_keys.append((overlap, row_data, key))
@@ -267,21 +254,26 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
             if polygons:
                 merged = unary_union(polygons)
                 geometry_data.append(merged)
-        return {"next_collect_info": tabulate(
-            table_data,
-            headers=["Direction", "Path", "Row", "Mission",
-                     "Passes dates (P for past)", "AOI % Overlap"],
-            tablefmt="grid"
+        return {
+            "next_collect_info": tabulate(
+                table_data,
+                headers=[
+                    "Direction",
+                    "Path",
+                    "Row",
+                    "Mission",
+                    "Passes dates (P for past)",
+                    "AOI % Overlap",
+                ],
+                tablefmt="grid",
             ),
-            "next_collect_geometry": geometry_data
-            }
+            "next_collect_geometry": geometry_data,
+        }
 
     except Exception as error:
         logging.exception(f"An unexpected error occurred: {error}")
     finally:
         session.close()
-
-
 
 
 def parse_args() -> argparse.Namespace:
@@ -293,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description="Find next Landsat satellite overpasses"
-                    " for a given latitude and longitude."
+        " for a given latitude and longitude."
     )
     parser.add_argument(
         "--lat", type=float, required=True, help="Latitude of the location."

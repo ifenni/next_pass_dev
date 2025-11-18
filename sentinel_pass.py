@@ -48,7 +48,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
                 + (" (P)" if date < datetime.now(timezone.utc) else "")
                 for date in row.begin_date
             ),
-            f"{row.intersection_pct:.2f}",
+            f"{row.intersection_pct:.2f}%",
         ]
         if has_cloudiness:
             cloud_vals = [
