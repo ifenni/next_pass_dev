@@ -277,3 +277,24 @@ def is_date_in_text(iso_date_str: str, text: str) -> bool:
     dates_in_text = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", text)
 
     return date_only_str in dates_in_text
+
+
+def style_function_factory(dataset_color: str, 
+                           inactive_color: str = "lightgray"):
+    def style_function(feature):
+        ok = feature["properties"].get("condition_ok")
+        if ok is True:
+            return {
+                "color": dataset_color,
+                "fillColor": dataset_color,
+                "weight": 2,
+                "fillOpacity": 0.5,
+            }
+        else:
+            return {
+                "color": inactive_color,
+                "fillColor": inactive_color,
+                "weight": 1,
+                "fillOpacity": 0.3,
+            }
+    return style_function
