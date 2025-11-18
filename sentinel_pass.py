@@ -109,7 +109,7 @@ def unique_geometry_per_orbit(collects):
     return grouped
 
 
-def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
+def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
 
@@ -122,7 +122,10 @@ def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
         and percentage overlap of each collect with the input geometry (AOI).
     """
     try:
-        gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
+        if sat == 'sentinel1':
+            gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
+        elif sat == 'sentinel2':
+            gdf = gpd.read_file(create_s2_collection_plan(n_day_past))
     except (IOError, OSError) as e:
         LOGGER.error(f"Error reading Sentinel plan file: {e}")
         return {
