@@ -5,6 +5,7 @@ import logging
 import sys
 import datetime
 import os
+import yagmail
 
 from shapely.geometry import Point, box
 from pathlib import Path
@@ -19,6 +20,7 @@ from opera_products import (
 )
 from plot_maps import (
     make_opera_granule_map,
+    make_opera_granule_drcs_map,
     make_overpasses_map
 )
 
@@ -100,7 +102,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help="Display cloudiness prediction and/or history for future and past overpasses, respectively ",
+        help="Show cloudiness prediction/history for future/past overpasses",
     )
     parser.add_argument(
         "-l",
@@ -113,6 +115,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--email",
         action="store_true",
         help="Send an email with the results.",
+    )
+    parser.add_argument(
+        "-g",
+        "--generate-drcs-html",
+        action="store_true",
+        help="Export a disaster response OPERA products map for the JPL DRCS",
     )
     return parser
 
@@ -151,34 +159,35 @@ def find_next_overpass(args) -> dict:
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
 
-    if args.sat == "sentinel-1":
+    elif args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
         sentinel1 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
         sentinel2 = []
         landsat = []
 
-    if args.sat == "sentinel-2":
+    elif args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
         sentinel2 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
         sentinel1 = []
         landsat = []
 
-    if args.sat == "landsat":
+    elif args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
         sentinel1 = []
         sentinel2 = []
+
+    else:
+        raise ValueError(
+            "Satellite not recognized. "
+            "Supported values: sentinel-1, sentinel-2, landsat, all."
+        )
 
     return {
             "sentinel-1": sentinel1,
             "sentinel-2": sentinel2,
             "landsat": landsat,
         }
-
-    raise ValueError(
-        "Satellite not recognized. "
-        "Supported values: sentinel-1, sentinel-2, landsat, all."
-    )
 
 
 def format_arg(bbox_arg):
@@ -199,7 +208,6 @@ def send_email(subject, body, attachment=None):
     :param body: Body of the email.
     :param attachment: Optional attachment file path.
     """
-    import yagmail
 
     GMAIL_USER = 'aria.hazards.jpl@gmail.com'
     GMAIL_PSWD = os.environ['GMAIL_APP_PSWD']
@@ -266,7 +274,7 @@ def main(cli_args=None):
     timestamp_dir = Path(f"nextpass_outputs_{timestamp}")
     timestamp_dir.mkdir(parents=True, exist_ok=True)
     log_file = timestamp_dir / "run_output.txt"
-    log = open(log_file, "w")
+    log = open(log_file, "w", encoding="utf-8")
     sys.stdout = sys.stderr = Tee(sys.__stdout__, log)
     print(f"Log file created: {log_file}")
     print(f"BBox = {format_arg(args.bbox)}\n")
@@ -294,11 +302,16 @@ def main(cli_args=None):
                         args.products)
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
-        return timestamp_dir
+
+    if args.generate_drcs_html and args.functionality in ("both"):
+        make_opera_granule_drcs_map(results_opera,
+                                    result_s1, result_s2, result_l,
+                                    args.bbox, timestamp_dir
+                                    )
 
     if args.email:
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
-        with open(log_file, "r") as f:
+        with open(log_file, "w", encoding="utf-8") as f:
             lines = f.readlines()
             email_body = ''.join(lines[4:])
         send_email(
@@ -311,6 +324,8 @@ def main(cli_args=None):
         print('=========================================')
         print('Alert emailed to recipients.')
         print('=========================================')
+
+    return timestamp_dir
 
 
 if __name__ == "__main__":
