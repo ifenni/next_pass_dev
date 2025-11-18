@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import datetime
 import logging
 import os
 import sys
@@ -11,7 +10,8 @@ from pathlib import Path
 from shapely.geometry import Point, box
 
 from landsat_pass import next_landsat_pass
-from opera_products import export_opera_products, find_print_available_opera_products
+from opera_products import (export_opera_products,
+                            find_print_available_opera_products)
 from plot_maps import make_opera_granule_map, make_overpasses_map
 from sentinel_pass import next_sentinel_pass
 from utils import Tee, bbox_type, create_polygon_from_kml
@@ -96,7 +96,8 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help="Display cloudiness prediction and/or history for future and past overpasses, respectively ",
+        help=("Display cloudiness prediction and/or history \
+              for future and past overpasses, respectively "),
     )
     parser.add_argument(
         "-l",
@@ -215,11 +216,13 @@ def send_email(subject, body, attachment=None):
         "ines.fenni@jpl.nasa.gov",
         "emre.havazli@jpl.nasa.gov",
     ]
-    yag.send(bcc=receivers, subject=subject, contents=[body], attachments=[attachment])
+    yag.send(bcc=receivers, subject=subject,
+             contents=[body], attachments=[attachment])
     return
 
 
-def run_next_pass(bbox, number_of_dates=5, date=None, functionality="opera_search"):
+def run_next_pass(bbox, number_of_dates=5,
+                  date=None, functionality="opera_search"):
     """
     Programmatic entry point for next_pass.
     Wraps main() and builds CLI-style args.
@@ -230,7 +233,8 @@ def run_next_pass(bbox, number_of_dates=5, date=None, functionality="opera_searc
         functionality (str): Functionality to run: 'overpasses',
         'opera_search', or 'both'
     """
-    cli_args = ["-b", *map(str, bbox), "-n", str(number_of_dates), "-f", functionality]
+    cli_args = ["-b", *map(str, bbox), "-n", str(number_of_dates),
+                "-f", functionality]
 
     if date:
         cli_args += ["-d", date]
@@ -269,7 +273,8 @@ def main(cli_args=None):
         result_s1 = result["sentinel-1"]
         result_s2 = result["sentinel-2"]
         result_l = result["landsat"]
-        make_overpasses_map(result_s1, result_s2, result_l, args.bbox, timestamp_dir)
+        make_overpasses_map(result_s1, result_s2, result_l,
+                            args.bbox, timestamp_dir)
         # loop over results and display only missions that were requested
         for mission, mission_result in result.items():
             if mission_result:
