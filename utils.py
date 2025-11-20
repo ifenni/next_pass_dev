@@ -1,24 +1,26 @@
-import logging
-import re
-import os
 import argparse
+import logging
+import os
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Tuple, Union
 from urllib.parse import urljoin
-from shapely.geometry import shape
-from shapely import LinearRing, Polygon, Point
-from lxml import etree
-from bs4 import BeautifulSoup
+
 import geopandas as gpd
 import requests
+from bs4 import BeautifulSoup
+from lxml import etree
+from shapely import LinearRing, Point, Polygon
+from shapely.geometry import shape
 
-LOGGER = logging.getLogger('acquisition_utils')
+LOGGER = logging.getLogger("acquisition_utils")
 
 
 class Tee:
     """Write to multiple streams (e.g., terminal and log file)."""
+
     def __init__(self, *streams):
         self.streams = streams
 
@@ -37,82 +39,75 @@ def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
     response = requests.get(url)
     response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, 'html.parser')
-    div = soup.find('div', class_=class_)
-    hrefs = [a['href'] for a in div.find_all('a', href=True)]
+    soup = BeautifulSoup(response.text, "html.parser")
+    div = soup.find("div", class_=class_)
+    hrefs = [a["href"] for a in div.find_all("a", href=True)]
     clean_hrefs = []
     for href in hrefs:
-        if href.startswith('https://sentinel/'):
+        if href.startswith("https://sentinel/"):
             # Fix malformed domain
-            href = href.replace('https://sentinel', '')
-        clean_hrefs.append(urljoin('https://sentinels.copernicus.eu', href))
+            href = href.replace("https://sentinel", "")
+        clean_hrefs.append(urljoin("https://sentinels.copernicus.eu", href))
 
     return clean_hrefs
 
 
-def download_kml(url: str, out_path: str = 'collection.kml') -> Path:
+def download_kml(url: str, out_path: str = "collection.kml") -> Path:
     """Download a KML file from a URL."""
     response = requests.get(url)
     response.raise_for_status()
     path = Path(out_path)
     path.write_bytes(response.content)
-    LOGGER.info(f'File downloaded successfully: {path}')
+    LOGGER.info(f"File downloaded successfully: {path}")
     return path
 
 
 def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
     """Parse a single placemark from KML."""
-    ns = './/{http://www.opengis.net/kml/2.2}'
-    begin_date = datetime.fromisoformat(placemark.find(f'{ns}begin').text)
-    end_date = datetime.fromisoformat(placemark.find(f'{ns}end').text)
+    ns = ".//{http://www.opengis.net/kml/2.2}"
+    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text)
+    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text)
 
-    data = placemark.find(f'{ns}ExtendedData')
+    data = placemark.find(f"{ns}ExtendedData")
     mode = data.find(f"{ns}Data[@name='Mode']/{ns}value").text
-    orbit_absolute = int(data.find(
-        f"{ns}Data[@name='OrbitAbsolute']/{ns}value").text
-        )
-    orbit_relative = int(data.find(
-        f"{ns}Data[@name='OrbitRelative']/{ns}value").text
-        )
+    orbit_absolute = int(data.find(f"{ns}Data[@name='OrbitAbsolute']/{ns}value").text)
+    orbit_relative = int(data.find(f"{ns}Data[@name='OrbitRelative']/{ns}value").text)
 
-    coords_text = placemark.find(
-        f'{ns}LinearRing/{ns}coordinates'
-        ).text.strip()
-    coords = [tuple(
-        map(float, coord.split(',')[:2])
-        ) for coord in coords_text.split()]
+    coords_text = placemark.find(f"{ns}LinearRing/{ns}coordinates").text.strip()
+    coords = [tuple(map(float, coord.split(",")[:2])) for coord in coords_text.split()]
     footprint = Polygon(LinearRing(coords))
 
-    return (
-        begin_date, end_date, mode,
-        orbit_absolute, orbit_relative, footprint
-    )
+    return (begin_date, end_date, mode, orbit_absolute, orbit_relative, footprint)
 
 
 def parse_kml(kml_path: Path) -> gpd.GeoDataFrame:
     """Parse a KML file into a GeoDataFrame."""
     tree = etree.parse(kml_path)
-    placemarks = [parse_placemark(elem) for elem in tree.findall(
-        './/{http://www.opengis.net/kml/2.2}Placemark'
-        )]
+    placemarks = [
+        parse_placemark(elem)
+        for elem in tree.findall(".//{http://www.opengis.net/kml/2.2}Placemark")
+    ]
     placemarks = [p for p in placemarks if p]
 
-    columns = ['begin_date', 'end_date', 'mode',
-               'orbit_absolute', 'orbit_relative', 'geometry']
-    return gpd.GeoDataFrame(placemarks, columns=columns,
-                            geometry='geometry', crs='EPSG:4326')
+    columns = [
+        "begin_date",
+        "end_date",
+        "mode",
+        "orbit_absolute",
+        "orbit_relative",
+        "geometry",
+    ]
+    return gpd.GeoDataFrame(
+        placemarks, columns=columns, geometry="geometry", crs="EPSG:4326"
+    )
 
 
 def parse_kml_polygon_coords(kml_file: Path) -> List[Tuple[float, float]]:
     """Extract coordinates from a KML polygon."""
     tree = ET.parse(kml_file)
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    coords_text = tree.find(
-        './/kml:Placemark//kml:coordinates', ns
-        ).text.strip()
-    return [tuple(
-        map(float, coord.split(',')[:2])
-        ) for coord in coords_text.split()]
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
+    coords_text = tree.find(".//kml:Placemark//kml:coordinates", ns).text.strip()
+    return [tuple(map(float, coord.split(",")[:2])) for coord in coords_text.split()]
 
 
 def create_polygon_from_kml(kml_file: Path) -> Optional[Polygon]:
@@ -130,16 +125,21 @@ def find_intersecting_collects(
     intersects = gdf[gdf.intersects(geometryAOI)].copy()
 
     if mode:
-        intersects = intersects[intersects['mode'] == mode]
+        intersects = intersects[intersects["mode"] == mode]
     if orbit_relative is not None:
-        intersects = intersects[intersects['orbit_relative'] == orbit_relative]
+        intersects = intersects[intersects["orbit_relative"] == orbit_relative]
 
-    intersects['intersection_pct'] = 100 * (
-                intersects.geometry.intersection(
-                    geometryAOI).area / geometryAOI.area)
+    if geometryAOI.type == "Point":
+        overlap = 100
+    else:
+        overlap = 100 * (
+            intersects.geometry.intersection(geometryAOI).area / geometryAOI.area
+        )
+    intersects["intersection_pct"] = overlap
+
     return intersects.sort_values(
-                ['intersection_pct', 'begin_date'],
-                ascending=[False, True]).reset_index(drop=True)
+        ["intersection_pct", "begin_date"], ascending=[False, True]
+    ).reset_index(drop=True)
 
 
 def bbox_type(arg_coords):
@@ -157,9 +157,11 @@ def bbox_type(arg_coords):
     if isinstance(arg_coords, str):
         arg_coords = [arg_coords]
 
-    if (len(arg_coords) == 1
-            and arg_coords[0].lower().endswith(".kml")
-            and os.path.isfile(arg_coords[0])):
+    if (
+        len(arg_coords) == 1
+        and arg_coords[0].lower().endswith(".kml")
+        and os.path.isfile(arg_coords[0])
+    ):
         return arg_coords[0]
 
     try:
@@ -191,7 +193,8 @@ def bbox_type(arg_coords):
             LOGGER.warning(
                 "Minimum latitude %.6f is greater than "
                 "maximum %.6f; swapping values.",
-                lat_min, lat_max
+                lat_min,
+                lat_max,
             )
             lat_min, lat_max = lat_max, lat_min
 
@@ -199,7 +202,8 @@ def bbox_type(arg_coords):
             LOGGER.warning(
                 "Minimum longitude %.6f is greater "
                 "than maximum %.6f; swapping values.",
-                lon_min, lon_max
+                lon_min,
+                lon_max,
             )
             lon_min, lon_max = lon_max, lon_min
 
@@ -207,8 +211,7 @@ def bbox_type(arg_coords):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Provide either 2 or 4 float values "
-            "or a path to a valid .kml file."
+            "Provide either 2 or 4 float values " "or a path to a valid .kml file."
         )
 
 
@@ -226,7 +229,7 @@ def get_spatial_extent_km(polygon_geojson):
     gdf = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326")
     # Project to metric CRS (Web Mercator: EPSG 3857) to calculate in meters
     gdf_proj = gdf.to_crs(epsg=3857)
-    
+
     # Get total bounds: [minx, miny, maxx, maxy]
     minx, miny, maxx, maxy = gdf_proj.total_bounds
 
@@ -241,7 +244,7 @@ def get_spatial_extent_km(polygon_geojson):
     return {
         "width_km": width_km,
         "height_km": height_km,
-        "area_km2": gdf_proj.geometry.area.sum() / 1e6  # Optional: area in km²
+        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  # Optional: area in km²
     }
 
 
