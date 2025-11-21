@@ -3,7 +3,7 @@ import re
 import logging
 import random
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from shapely.geometry import box, Polygon
 import matplotlib.pyplot as plt
 import geopandas as gpd
@@ -11,7 +11,10 @@ import folium
 from jinja2 import Template
 from branca.element import MacroElement
 from matplotlib.colors import to_hex
-from utils import bbox_type, create_polygon_from_kml, style_function_factory
+from utils import (bbox_type,
+                   create_polygon_from_kml,
+                   style_function_factory,
+                   check_opera_overpass_intersection)
 
 # Configure logging
 logging.basicConfig(
@@ -87,17 +90,8 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
 
     # Initialize base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
-    # Add AOI bounding box
+    # Get AOI bounding box
     aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
-    folium.GeoJson(
-        aoi_geojson,
-        name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
-    ).add_to(map_object)
     folium.TileLayer("Esri.WorldImagery").add_to(map_object)
     # Generate distinct colors for layers
     cmap = plt.get_cmap("tab20")
@@ -170,7 +164,16 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
         # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, color))
-
+    # finish with AOI
+    folium.GeoJson(
+        aoi_geojson,
+        name="AOI",
+        style_function=lambda x: {
+            "color": "black",
+            "weight": 2,
+            "fillOpacity": 0.0
+        }
+    ).add_to(map_object)
     # Add layer control
     folium.LayerControl().add_to(map_object)
 
@@ -211,16 +214,13 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     return map_object
 
 
-def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
-                                bbox, timestamp_dir):
+def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
+                                result_s2, result_l, bbox, timestamp_dir):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
     """
     output_file = timestamp_dir / "opera_products_drcs_map.html"
-    event_date_input = "2025-11-16T15:30:00"
-    event_date = datetime.fromisoformat(event_date_input)
-    
     # Parse AOI center for initial map centering
     bbox = bbox_type(bbox)
     if isinstance(bbox, str):
@@ -237,30 +237,24 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
 
     # Initialize base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
-    # Add AOI bounding box
+    # Get AOI bounding box
     aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
-    folium.GeoJson(
-        aoi_geojson,
-        name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
-    ).add_to(map_object)
+
     folium.TileLayer("Esri.WorldImagery").add_to(map_object)
     # Generate distinct colors for layers
     cmap = plt.get_cmap("tab20")
     dataset_names = list(results_dict.keys())
     colors = [to_hex(cmap(i % 20)) for i in range(len(dataset_names))]
     legend_entries = []
-    # here we are looping over OPERA products 
+    # here we are looping over OPERA products
     for i, (dataset, data) in enumerate(results_dict.items()):
+        # for now, let us not consider OPERA_L3_DIST-ANN-HLS_V1
+        if dataset == "OPERA_L3_DIST-ANN-HLS_V1":
+            continue
         gdf = data.get("gdf")
         if gdf is None or gdf.empty:
             LOGGER.info(f"Skipping {dataset}: empty or missing GeoDataFrame.")
             continue
-
         gdf = gdf.copy()
         if i < 4:
             pos_delta = 0.08 * (i - 1)
@@ -281,16 +275,19 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
                 label = umm.get("GranuleUR", "OPERA Granule")
 
                 parts = label.split("_")
-                aquisition_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
-                input_sat = parts[6]
+                aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
+                aqu_date_utc = aqu_date.replace(tzinfo=timezone.utc)
 
             except Exception as e:
                 LOGGER.info(f"Unexpected error: {e}")
                 download_url = "URL not available"
                 label = "OPERA Granule"
 
-            # condition_ok = date of the granule > event_date
-            condition_ok = aquisition_date > event_date
+            # get geometry
+            geom = gdf.iloc[idx].geometry
+            centroid = geom.centroid
+            # check if granule is post event
+            condition_ok = aqu_date_utc > event_date
 
             if condition_ok:
                 color = colors[i]
@@ -303,9 +300,20 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
                 url_value = download_url
                 label_value = label
             else:
+                product_geom = geom.intersection(AOI_polygon)
+                report = check_opera_overpass_intersection(
+                                                        label, product_geom,
+                                                        result_s1, result_s2,
+                                                        result_l, event_date)
                 color = "lightgray"
-                popup_html = """
-                <i>No download available — granule older than event date.</i>
+                sentences_html = (
+                    report.replace("\n", "<br>")
+                    if report
+                    else "No overpass info available."
+                )
+                popup_html = f"""
+                <b>Not available yet:</b><br>
+                {sentences_html}
                 """
                 url_value = "N/A"
                 label_value = f"{label} (old granule)"
@@ -314,10 +322,6 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
             gdf.at[idx, "URL"] = url_value
             gdf.at[idx, "GranuleUR"] = label_value
             gdf.at[idx, "condition_ok"] = condition_ok
-
-            # Add geometry and marker
-            geom = gdf.iloc[idx].geometry
-            centroid = geom.centroid
 
             # Add marker with conditional color
             folium.Marker(
@@ -340,6 +344,17 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
         # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, colors[i]))
+
+    # Add AOI layer last
+    folium.GeoJson(
+        aoi_geojson,
+        name="AOI",
+        style_function=lambda x: {
+            "color": "black",
+            "weight": 2,
+            "fillOpacity": 0.0
+        }
+    ).add_to(map_object)
 
     # Add layer control
     folium.LayerControl().add_to(map_object)
@@ -377,7 +392,9 @@ def make_opera_granule_drcs_map(results_dict, result_s1, result_s2, result_l,
 
     # Save and retrun
     map_object.save(output_file)
-    LOGGER.info(f"-> DRCS OPERA granules Map successfully saved to {output_file}")
+    LOGGER.info(
+        f"-> DRCS OPERA granules Map successfully saved to {output_file}"
+        )
     return map_object
 
 
@@ -416,17 +433,8 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     center_lon = (AOI[0] + AOI[2]) / 2
     # Base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=5)
-    # Add AOI bounding box
+    # Get AOI bounding box
     aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
-    folium.GeoJson(
-        aoi_geojson,
-        name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
-    ).add_to(map_object)
     for sat_name, (info_text, geometry_list) in satellites.items():
         # Clean and split info
         lines = info_text.split("\n")
@@ -510,6 +518,16 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                                            max_width=300)
                     ).add_to(fg)
             fg.add_to(map_object)
+    # add AOI layercontrol
+    folium.GeoJson(
+        aoi_geojson,
+        name="AOI",
+        style_function=lambda x: {
+            "color": "black",
+            "weight": 2,
+            "fillOpacity": 0.0
+        }
+    ).add_to(map_object)
     # Add LayerControl to toggle on/off
     folium.LayerControl(collapsed=False).add_to(map_object)
     # Save and retrun
