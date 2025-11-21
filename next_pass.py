@@ -3,17 +3,17 @@
 import argparse
 import logging
 import sys
-import datetime
 import os
-import yagmail
-
-from shapely.geometry import Point, box
 from pathlib import Path
 from datetime import datetime
+from shapely.geometry import Point, box
+import yagmail
 
 from landsat_pass import next_landsat_pass
 from sentinel_pass import next_sentinel_pass
-from utils import Tee, bbox_type, create_polygon_from_kml
+from utils import (Tee,
+                   bbox_type, create_polygon_from_kml,
+                   valid_drcs_datetime)
 from opera_products import (
     find_print_available_opera_products,
     export_opera_products
@@ -89,7 +89,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--event-date",
         default="today",
         type=str,
-        help="Date of the event to consider for OPERA products",
+        help="Date (UTC) of the event to consider for OPERA products",
     )
     parser.add_argument(
         "-p",
@@ -119,8 +119,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-g",
         "--generate-drcs-html",
-        action="store_true",
-        help="Export a disaster response OPERA products map for the JPL DRCS",
+        type=valid_drcs_datetime,
+        metavar="YYYY-MM-DDTHH:MM",
+        help=("Generate DRCS HTML file using a UTC event date "
+              " in format YYYY-MM-DDTHH:MM")
     )
     return parser
 
@@ -138,7 +140,6 @@ def find_next_overpass(args) -> dict:
     if isinstance(bbox, str):
         # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
-        print(list(geometry.exterior.coords)[:5])
         centroid = geometry.centroid
         lat_min = centroid.y
         lon_min = centroid.x
@@ -151,23 +152,29 @@ def find_next_overpass(args) -> dict:
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
-
+        sentinel1 = next_sentinel_pass(
+            "sentinel1", geometry, n_day_past, pred_cloudiness
+        )
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
-
+        sentinel2 = next_sentinel_pass(
+            "sentinel2", geometry, n_day_past, pred_cloudiness
+        )
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
 
     elif args.sat == "sentinel-1":
         LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
+        sentinel1 = next_sentinel_pass(
+            "sentinel1", geometry, n_day_past, pred_cloudiness
+        )
         sentinel2 = []
         landsat = []
 
     elif args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(geometry, n_day_past, pred_cloudiness)
+        sentinel2 = next_sentinel_pass(
+            "sentinel2", geometry, n_day_past, pred_cloudiness
+        )
         sentinel1 = []
         landsat = []
 
@@ -303,8 +310,8 @@ def main(cli_args=None):
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
-    if args.generate_drcs_html and args.functionality in ("both"):
-        make_opera_granule_drcs_map(results_opera,
+    if args.generate_drcs_html is not None and args.functionality in ("both"):
+        make_opera_granule_drcs_map(args.generate_drcs_html, results_opera,
                                     result_s1, result_s2, result_l,
                                     args.bbox, timestamp_dir
                                     )
