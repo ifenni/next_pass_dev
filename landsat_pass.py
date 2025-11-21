@@ -12,7 +12,6 @@ from utils import arcgis_to_polygon
 from collections import defaultdict
 
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -270,7 +269,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI,
         return {"next_collect_info": tabulate(
             table_data,
             headers=["Direction", "Path", "Row", "Mission",
-                     "Passes dates (P for past)", "AOI % Overlap"],
+                     "Passes UTC dates (P for past)", "AOI % Overlap"],
             tablefmt="grid"
             ),
             "next_collect_geometry": geometry_data
