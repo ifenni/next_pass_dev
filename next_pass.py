@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import yagmail
 from datetime import datetime
 from pathlib import Path
 
