@@ -23,11 +23,15 @@ SENT2_URL = (
 
 
 def create_s1_collection_plan(n_day_past: float) -> Path:
-    """Prepare Sentinel-1 acquisition plan collection."""
     urls = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
     urls += scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
+    platforms = ["S1A"] * len(
+                        scrape_esa_download_urls(SENT1_URL, "sentinel-1a")) + \
+                ["S1C"] * len(
+                        scrape_esa_download_urls(SENT1_URL, "sentinel-1c"))
     return build_sentinel_collection(
-        urls, n_day_past, "sentinel1", "sentinel_1_collection.geojson", LOGGER
+        urls, n_day_past, "sentinel1", "sentinel_1_collection.geojson", 
+        LOGGER, platforms
     )
 
 
@@ -42,33 +46,72 @@ def create_s2_collection_plan(n_day_past: float) -> Path:
 
 def format_collects(gdf: gpd.GeoDataFrame) -> str:
     gdf_sorted = gdf.sort_values("intersection_pct", ascending=False)
-    has_cloudiness = "cloudiness" in gdf.columns
+
+    has_cloudiness = "cloudiness" in gdf_sorted.columns
+
+    # Only show platform column if it has at least one non-empty value
+    has_platform = "platform" in gdf_sorted.columns \
+        and gdf_sorted["platform"].notnull().any() \
+        and (gdf_sorted["platform"].astype(str) != "").any()
+
     table = []
-    for idx, row in gdf_sorted.iterrows():
-        base_row = [
-            idx + 1,
-            row.orbit_relative,
-            ", ".join(date.strftime("%Y-%m-%d %H:%M:%S") + (
-                " (P)" if date < datetime.now(timezone.utc) else "")
-                      for date in row.begin_date),
-            f"{row.intersection_pct:.2f}"
-        ]
+
+    for i, row in gdf_sorted.iterrows():
+        base_row = [i + 1]  # Row number
+
+        if has_platform:
+            base_row.append(row.platform)
+
+        # Relative orbit
+        base_row.append(row.orbit_relative)
+
+        # Dates
+        dates_str = ", ".join(
+            d.strftime("%Y-%m-%d %H:%M:%S"
+                       ) + (
+                           " (P)" if d < datetime.now(timezone.utc) else "")
+            for d in row.begin_date
+        )
+        base_row.append(dates_str)
+
+        # Intersection %
+        base_row.append(f"{row.intersection_pct:.2f}")
+
+        # Cloudiness if exists
         if has_cloudiness:
-            cloud_vals = [f"{val:.2f}" if val is not None else "N/A"
-                          for val in row.cloudiness
-                          ]
-            cloudiness_str = ", ".join(cloud_vals)
-            base_row.append(cloudiness_str)
+            if isinstance(row.cloudiness, list):
+                cloud_str = ", ".join(
+                    f"{v:.2f}" if v is not None else "N/A"
+                    for v in row.cloudiness
+                )
+            else:
+                cloud_str = f"{row.cloudiness:.2f}"
+            base_row.append(cloud_str)
+
         table.append(base_row)
 
-    headers = ["#", "Relative Orbit", "Collection Date & Time (P for past)",
-               "AOI % Overlap"]
+    # Headers
+    headers = ["#"]
+    if has_platform:
+        headers.append("Platform")
+    headers += [
+        "Relative Orbit",
+        "Collection Date & UTC Time (P = past)",
+        "AOI % Overlap"
+    ]
     if has_cloudiness:
         headers.append("Cloudiness (%)")
-    return tabulate(table, headers, tablefmt="grid")
+
+    return tabulate(table, headers=headers, tablefmt="grid")
 
 
 def unique_geometry_per_orbit(collects):
+    """
+    Aggregate granules per orbit, keeping unique geometries and
+    separating S1A and S1C even if they share the same orbit.
+    """
+
+    # Helper to keep only unique geometries
     def first_unique_geoms(geoms):
         seen = set()
         unique = []
@@ -80,36 +123,41 @@ def unique_geometry_per_orbit(collects):
         return unique
 
     has_cloudiness = "cloudiness" in collects.columns
-    # Ensure dates are proper datetime
+
+    # Ensure begin_date is datetime
     collects['begin_date'] = pd.to_datetime(
-        collects['begin_date'], errors='raise')
+        collects['begin_date'], errors='raise'
+        )
 
-    # Group by orbit and keep dates as list of datetime
+    # Aggregation dictionary
+    agg_dict = {
+        "begin_date": lambda dates: sorted(dates),
+        "geometry": first_unique_geoms,
+        "intersection_pct": "first",
+    }
+
     if has_cloudiness:
-        grouped = collects.groupby("orbit_relative").agg({
-            "begin_date": lambda dates: sorted(dates),
-            "geometry": first_unique_geoms,
-            "intersection_pct": "first",
-            "cloudiness": "first",
-        }).reset_index()
-    else:
-        grouped = collects.groupby("orbit_relative").agg({
-            "begin_date": lambda dates: sorted(dates),
-            "geometry": first_unique_geoms,
-            "intersection_pct": "first",
-        }).reset_index()
+        agg_dict["cloudiness"] = "first"
 
-    # One geometry per orbit (first unique)
+    # Group by both orbit_relative and platform for Sentinel-1
+    groupby_cols = ["orbit_relative"]
+    if "platform" in collects.columns and collects["platform"].notna().any():
+        groupby_cols.append("platform")
+
+    grouped = collects.groupby(groupby_cols).agg(agg_dict).reset_index()
+
+    # Flatten geometry list to first geometry only
     grouped["geometry"] = grouped["geometry"].apply(
-        lambda geoms: geoms[0] if geoms else None)
+                        lambda geoms: geoms[0] if geoms else None)
 
-    # as done in format_collects, sort by intersection_pct descending
-    grouped = grouped.sort_values(
-        "intersection_pct", ascending=False).reset_index(drop=True)
+    # Sort by intersection percentage
+    grouped = grouped.sort_values("intersection_pct", ascending=False
+                                  ).reset_index(drop=True)
+
     return grouped
 
 
-def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
+def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
 
@@ -122,7 +170,10 @@ def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
         and percentage overlap of each collect with the input geometry (AOI).
     """
     try:
-        gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
+        if sat == "sentinel1":
+            gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
+        elif sat == "sentinel2":
+            gdf = gpd.read_file(create_s2_collection_plan(n_day_past))
     except (IOError, OSError) as e:
         LOGGER.error(f"Error reading Sentinel plan file: {e}")
         return {
@@ -133,10 +184,19 @@ def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
 
     # Enable progress bar for apply (optional)
     tqdm.pandas()
+    if "platform" not in gdf.columns:
+        LOGGER.warning(
+            "The collection plan does not contain a 'platform' column."
+            )
 
     collects = find_intersecting_collects(gdf, geometry)
     collects = collects.drop_duplicates(
         subset=["begin_date", "orbit_relative"])
+
+    if "platform" not in gdf.columns:
+        LOGGER.warning(
+            "The collection plan does not contain a 'platform' column."
+            )
 
     if not collects.empty:
         if arg_cloudiness:
@@ -167,6 +227,10 @@ def next_sentinel_pass(geometry, n_day_past, arg_cloudiness) -> dict:
             }
         else:
             grouped = unique_geometry_per_orbit(collects)
+            if "platform" not in gdf.columns:
+                LOGGER.warning(
+                    "The collection plan does not contain a 'platform' column."
+                    )
             return {
                 "next_collect_info": format_collects(grouped),
                 "next_collect_geometry": grouped["geometry"].tolist(),
