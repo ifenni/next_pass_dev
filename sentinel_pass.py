@@ -1,25 +1,20 @@
 import logging
-from pathlib import Path
-import pandas as pd
-import geopandas as gpd
-from tabulate import tabulate
 from datetime import datetime, timezone
+from pathlib import Path
 
-from collection_builder import build_sentinel_collection
-from utils import (find_intersecting_collects,
-                   scrape_esa_download_urls)
-from cloudiness import make_get_cloudiness_for_row
+import geopandas as gpd
+import pandas as pd
+from tabulate import tabulate
 from tqdm import tqdm
 
+from cloudiness import make_get_cloudiness_for_row
+from collection_builder import build_sentinel_collection
+from utils import find_intersecting_collects, scrape_esa_download_urls
 
 LOGGER = logging.getLogger("sentinel_pass")
 
-SENT1_URL = (
-    "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-1/acquisition-plans"
-)
-SENT2_URL = (
-    "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2/acquisition-plans"
-)
+SENT1_URL = "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-1/acquisition-plans"
+SENT2_URL = "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2/acquisition-plans"
 
 
 def create_s1_collection_plan(n_day_past: float) -> Path:
@@ -190,8 +185,7 @@ def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
             )
 
     collects = find_intersecting_collects(gdf, geometry)
-    collects = collects.drop_duplicates(
-        subset=["begin_date", "orbit_relative"])
+    collects = collects.drop_duplicates(subset=["begin_date", "orbit_relative"])
 
     if "platform" not in gdf.columns:
         LOGGER.warning(
@@ -201,17 +195,22 @@ def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
     if not collects.empty:
         if arg_cloudiness:
             # Group collects by orbit, aggregate timestamps as list
-            collects_grouped = collects.groupby(
-                "orbit_relative", sort=False
-                ).agg({
+            collects_grouped = (
+                collects.groupby("orbit_relative", sort=False)
+                .agg(
+                    {
                         "begin_date": list,
                         "geometry": "first",  # Or use union if needed
-                        "intersection_pct": "mean"  # Or max
-                    }).reset_index()
+                        "intersection_pct": "mean",  # Or max
+                    }
+                )
+                .reset_index()
+            )
 
             num_rows = len(collects_grouped)
-            LOGGER.info(f"Calculating cloudiness for overpasses over {
-                num_rows} relative orbits ...")
+            LOGGER.info(
+                f"Calculating cloudiness for overpasses over {num_rows} relative orbits ..."
+            )
             get_cloudiness_for_row = make_get_cloudiness_for_row(geometry)
             collects_grouped["cloudiness"] = collects_grouped.apply(
                 get_cloudiness_for_row, axis=1
@@ -234,7 +233,7 @@ def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
             return {
                 "next_collect_info": format_collects(grouped),
                 "next_collect_geometry": grouped["geometry"].tolist(),
-                "intersection_pct": grouped["intersection_pct"].tolist()
+                "intersection_pct": grouped["intersection_pct"].tolist(),
             }
     else:
         return {
@@ -243,4 +242,3 @@ def next_sentinel_pass(sat, geometry, n_day_past, arg_cloudiness) -> dict:
             "intersection_pct": None,
             "cloudiness": None,
         }
-

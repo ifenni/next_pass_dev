@@ -2,14 +2,17 @@
 
 import argparse
 import logging
-import sys
 import os
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
+
 from shapely.geometry import Point, box
-import yagmail
 
 from landsat_pass import next_landsat_pass
+from opera_products import (export_opera_products,
+                            find_print_available_opera_products)
+from plot_maps import make_opera_granule_map, make_overpasses_map
 from sentinel_pass import next_sentinel_pass
 from utils import (Tee,
                    bbox_type, create_polygon_from_kml,
@@ -54,8 +57,10 @@ def create_parser() -> argparse.ArgumentParser:
         required=True,
         nargs="+",
         type=str,
-        help=("Bounding box: Either 2 or 4 floats (point or bbox) "
-              "or a path to a .kml location file"),
+        help=(
+            "Bounding box: Either 2 or 4 floats (point or bbox) "
+            "or a path to a .kml location file"
+        ),
     )
     parser.add_argument(
         "-s",
@@ -65,10 +70,11 @@ def create_parser() -> argparse.ArgumentParser:
         help="Satellite mission. Default is all.",
     )
     parser.add_argument(
-        '-k', '--look-back',
+        "-k",
+        "--look-back",
         type=int,
         default=13,
-        help='Number of days to look back for past overpasses'
+        help="Number of days to look back for past overpasses",
     )
     parser.add_argument(
         "-f",
@@ -102,7 +108,8 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help="Show cloudiness prediction/history for future/past overpasses",
+        help=("Display cloudiness prediction and/or history \
+              for future and past overpasses, respectively "),
     )
     parser.add_argument(
         "-l",
@@ -155,10 +162,12 @@ def find_next_overpass(args) -> dict:
         sentinel1 = next_sentinel_pass(
             "sentinel1", geometry, n_day_past, pred_cloudiness
         )
+
         LOGGER.info("Fetching Sentinel-2 data...")
         sentinel2 = next_sentinel_pass(
             "sentinel2", geometry, n_day_past, pred_cloudiness
         )
+
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
 
@@ -191,10 +200,10 @@ def find_next_overpass(args) -> dict:
         )
 
     return {
-            "sentinel-1": sentinel1,
-            "sentinel-2": sentinel2,
-            "landsat": landsat,
-        }
+        "sentinel-1": sentinel1,
+        "sentinel-2": sentinel2,
+        "landsat": landsat,
+    }
 
 
 def format_arg(bbox_arg):
@@ -216,28 +225,22 @@ def send_email(subject, body, attachment=None):
     :param attachment: Optional attachment file path.
     """
 
-    GMAIL_USER = 'aria.hazards.jpl@gmail.com'
-    GMAIL_PSWD = os.environ['GMAIL_APP_PSWD']
+    GMAIL_USER = "aria.hazards.jpl@gmail.com"
+    GMAIL_PSWD = os.environ["GMAIL_APP_PSWD"]
     yag = yagmail.SMTP(GMAIL_USER, GMAIL_PSWD)
 
-    receivers = ['cole.speed@jpl.nasa.gov',
-                 'ines.fenni@jpl.nasa.gov',
-                 'emre.havazli@jpl.nasa.gov']
-    yag.send(
-             bcc=receivers,
-             subject=subject,
-             contents=[body],
-             attachments=[attachment]
-             )
+    receivers = [
+        "cole.speed@jpl.nasa.gov",
+        "ines.fenni@jpl.nasa.gov",
+        "emre.havazli@jpl.nasa.gov",
+    ]
+    yag.send(bcc=receivers, subject=subject,
+             contents=[body], attachments=[attachment])
     return
 
 
-def run_next_pass(
-    bbox,
-    number_of_dates=5,
-    date=None,
-    functionality="opera_search"
-     ):
+def run_next_pass(bbox, number_of_dates=5,
+                  date=None, functionality="opera_search"):
     """
     Programmatic entry point for next_pass.
     Wraps main() and builds CLI-style args.
@@ -248,11 +251,8 @@ def run_next_pass(
         functionality (str): Functionality to run: 'overpasses',
         'opera_search', or 'both'
     """
-    cli_args = [
-        "-b", *map(str, bbox),
-        "-n", str(number_of_dates),
-        "-f", functionality
-    ]
+    cli_args = ["-b", *map(str, bbox), "-n", str(number_of_dates),
+                "-f", functionality]
 
     if date:
         cli_args += ["-d", date]
@@ -297,16 +297,17 @@ def main(cli_args=None):
         for mission, mission_result in result.items():
             if mission_result:
                 print(f"\n=== {mission.upper()} ===")
-                print(mission_result.get("next_collect_info",
-                                         "No collection info available."))
+                print(
+                    mission_result.get(
+                        "next_collect_info", "No collection info available."
+                    )
+                )
 
     if args.functionality in ("both", "opera_search"):
         # search for & print OPERA results
         results_opera = find_print_available_opera_products(
-                        args.bbox,
-                        args.number_of_dates,
-                        args.event_date,
-                        args.products)
+            args.bbox, args.number_of_dates, args.event_date, args.products
+        )
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
@@ -320,17 +321,17 @@ def main(cli_args=None):
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
         with open(log_file, "w", encoding="utf-8") as f:
             lines = f.readlines()
-            email_body = ''.join(lines[4:])
+            email_body = "".join(lines[4:])
         send_email(
             f"Next Satellite Overpasses for {
                 args.sat.upper()} as of {
                     timestamp} UTC for AOI:{format_arg(args.bbox)}",
             email_body,
-            overpasses_map
+            overpasses_map,
         )
-        print('=========================================')
-        print('Alert emailed to recipients.')
-        print('=========================================')
+        print("=========================================")
+        print("Alert emailed to recipients.")
+        print("=========================================")
 
     return timestamp_dir
 
