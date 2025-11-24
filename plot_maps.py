@@ -1,20 +1,24 @@
 import colorsys
-import re
+import json
 import logging
 import random
-import json
+import re
 from datetime import datetime, timezone
-from shapely.geometry import box, Polygon
-import matplotlib.pyplot as plt
-import geopandas as gpd
+
 import folium
-from jinja2 import Template
+import geopandas as gpd
+import matplotlib.pyplot as plt
 from branca.element import MacroElement
+from jinja2 import Template
 from matplotlib.colors import to_hex
-from utils import (bbox_type,
-                   create_polygon_from_kml,
-                   style_function_factory,
-                   check_opera_overpass_intersection)
+from shapely.geometry import Polygon, box
+
+from utils import (
+    bbox_type,
+    check_opera_overpass_intersection,
+    create_polygon_from_kml,
+    style_function_factory,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -56,12 +60,10 @@ def hsl_distinct_colors_improved(num_colors):
         hue = (i * 360 / num_colors) % 360
         saturation = random.randint(60, 80)
         lightness = random.randint(30, 50)
-        r, g, b = colorsys.hls_to_rgb(
-            hue / 360, lightness / 100, saturation / 100
-            )
+        r, g, b = colorsys.hls_to_rgb(hue / 360, lightness / 100, saturation / 100)
         hex_color = "#{:02x}{:02x}{:02x}".format(
             int(r * 255), int(g * 255), int(b * 255)
-            )
+        )
         colors.append(hex_color)
 
     return colors
@@ -168,11 +170,7 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
+        style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
     # Add layer control
     folium.LayerControl().add_to(map_object)
@@ -214,8 +212,9 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     return map_object
 
 
-def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
-                                result_s2, result_l, bbox, timestamp_dir):
+def make_opera_granule_drcs_map(
+    event_date, results_dict, result_s1, result_s2, result_l, bbox, timestamp_dir
+):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
@@ -275,7 +274,10 @@ def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
                 label = umm.get("GranuleUR", "OPERA Granule")
 
                 parts = label.split("_")
-                aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
+                if parts[2] == "DISP-S1":
+                    aqu_date = datetime.strptime(parts[6], "%Y%m%dT%H%M%SZ")
+                else:
+                    aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
                 aqu_date_utc = aqu_date.replace(tzinfo=timezone.utc)
 
             except Exception as e:
@@ -302,9 +304,8 @@ def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
             else:
                 product_geom = geom.intersection(AOI_polygon)
                 report = check_opera_overpass_intersection(
-                                                        label, product_geom,
-                                                        result_s1, result_s2,
-                                                        result_l, event_date)
+                    label, product_geom, result_s1, result_s2, result_l, event_date
+                )
                 color = "lightgray"
                 sentences_html = (
                     report.replace("\n", "<br>")
@@ -338,7 +339,7 @@ def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
         folium.GeoJson(
             data=json.loads(gdf.to_json()),
             style_function=style_func,
-            name=f"{dataset}_geojson"
+            name=f"{dataset}_geojson",
         ).add_to(feature_group)
 
         # Add the FeatureGroup to the map
@@ -349,11 +350,7 @@ def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
+        style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
 
     # Add layer control
@@ -392,9 +389,7 @@ def make_opera_granule_drcs_map(event_date, results_dict, result_s1,
 
     # Save and retrun
     map_object.save(output_file)
-    LOGGER.info(
-        f"-> DRCS OPERA granules Map successfully saved to {output_file}"
-        )
+    LOGGER.info(f"-> DRCS OPERA granules Map successfully saved to {output_file}")
     return map_object
 
 
@@ -413,8 +408,9 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     satellites = {}
     for name, result in satellite_results.items():
         if result:
-            next_collect_info = result.get("next_collect_info",
-                                           "No collection info available")
+            next_collect_info = result.get(
+                "next_collect_info", "No collection info available"
+            )
             next_collect_geometry = result.get("next_collect_geometry", None)
             satellites[name] = (next_collect_info, next_collect_geometry)
 
@@ -438,7 +434,7 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     for sat_name, (info_text, geometry_list) in satellites.items():
         # Clean and split info
         lines = info_text.split("\n")
-        cleaned_info = [line for line in lines if re.search(r'[1-9]', line)]
+        cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
         info_list = cleaned_info
         num_polygons = len(geometry_list)
 
@@ -457,29 +453,29 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                 sat_num = 8 if i % 2 == 0 else 9
 
                 # Determine ascending or descending from info text
-                if re.search(r'ascending', info, re.IGNORECASE):
-                    asc_desc = 'Ascending'
-                elif re.search(r'descending', info, re.IGNORECASE):
-                    asc_desc = 'Descending'
+                if re.search(r"ascending", info, re.IGNORECASE):
+                    asc_desc = "Ascending"
+                elif re.search(r"descending", info, re.IGNORECASE):
+                    asc_desc = "Descending"
                 else:
-                    asc_desc = 'Unknown'  
+                    asc_desc = "Unknown"
 
                 # Select the correct feature group and color
-                if sat_num == 8 and asc_desc == 'Ascending':
+                if sat_num == 8 and asc_desc == "Ascending":
                     group = fg_8_asc
-                    color = 'red'
-                elif sat_num == 8 and asc_desc == 'Descending':
+                    color = "red"
+                elif sat_num == 8 and asc_desc == "Descending":
                     group = fg_8_desc
-                    color = 'darkred'
-                elif sat_num == 9 and asc_desc == 'Ascending':
+                    color = "darkred"
+                elif sat_num == 9 and asc_desc == "Ascending":
                     group = fg_9_asc
-                    color = 'blue'
-                elif sat_num == 9 and asc_desc == 'Descending':
+                    color = "blue"
+                elif sat_num == 9 and asc_desc == "Descending":
                     group = fg_9_desc
-                    color = 'darkblue'
+                    color = "darkblue"
                 else:
                     group = fg_8_asc
-                    color = 'gray'
+                    color = "gray"
 
                 geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
                 folium.GeoJson(
@@ -488,9 +484,9 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                     style_function=lambda x, color=color: {
                         "color": color,
                         "weight": 2,
-                        "fillOpacity": 0.3
+                        "fillOpacity": 0.3,
                     },
-                    popup=folium.Popup(f"{sat_name}: {info}", max_width=300)
+                    popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
                 ).add_to(group)
 
             # Add all feature groups to map
@@ -501,8 +497,7 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
         else:
             # Other satellites (Sentinel etc.)
             fg = folium.FeatureGroup(name=sat_name)
-            for i, (polygon, info) in enumerate(
-                    zip(geometry_list, info_list), start=1):
+            for i, (polygon, info) in enumerate(zip(geometry_list, info_list), start=1):
                 if isinstance(polygon, Polygon):
                     color = colors[i - 1]
                     geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
@@ -512,21 +507,16 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                         style_function=lambda x, color=color: {
                             "color": color,
                             "weight": 2,
-                            "fillOpacity": 0.3
+                            "fillOpacity": 0.3,
                         },
-                        popup=folium.Popup(f"{sat_name}: {info}",
-                                           max_width=300)
+                        popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
                     ).add_to(fg)
             fg.add_to(map_object)
     # add AOI layercontrol
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
-        style_function=lambda x: {
-            "color": "black",
-            "weight": 2,
-            "fillOpacity": 0.0
-        }
+        style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
     # Add LayerControl to toggle on/off
     folium.LayerControl(collapsed=False).add_to(map_object)
