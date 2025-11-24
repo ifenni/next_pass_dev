@@ -275,7 +275,7 @@ def make_opera_granule_drcs_map(
 
                 parts = label.split("_")
                 if parts[2] == "DISP-S1":
-                    aqu_date = datetime.strptime(parts[6], "%Y%m%dT%H%M%SZ")
+                    aqu_date = datetime.strptime(parts[7], "%Y%m%dT%H%M%SZ")
                 else:
                     aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
                 aqu_date_utc = aqu_date.replace(tzinfo=timezone.utc)
