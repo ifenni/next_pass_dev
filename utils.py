@@ -17,6 +17,8 @@ from bs4 import BeautifulSoup
 from lxml import etree
 from shapely import LinearRing, Point, Polygon
 from shapely.geometry import shape
+from timezonefinder import TimezoneFinder
+from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger("acquisition_utils")
 
@@ -246,7 +248,7 @@ def get_spatial_extent_km(polygon_geojson):
     return {
         "width_km": width_km,
         "height_km": height_km,
-        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  # Optional: area in km²
+        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  
     }
 
 
@@ -373,6 +375,7 @@ def check_opera_overpass_intersection(product_label, product_geom,
     past_overpasses = []
     future_overpasses = []
 
+    tf = TimezoneFinder()
     # Loop over lines and corresponding geometries
     for line, poly in zip(relevant_lines, geometry_list):
         if not isinstance(poly, Polygon):
@@ -383,6 +386,16 @@ def check_opera_overpass_intersection(product_label, product_geom,
         if inter.is_empty:
             continue
         overlap_pct = (inter.area / product_geom.area) * 100.0
+
+        # get inter time zone
+        centroid = inter.centroid
+        lon, lat = centroid.x, centroid.y
+        timezone_name = tf.timezone_at(lat=lat, lng=lon)
+        if timezone_name is None:
+            # fallback if the polygon is offshore or ambiguous
+            timezone_name = tf.closest_timezone_at(lat=lat, lng=lon)
+
+        bbox_tz = ZoneInfo(timezone_name)
 
         # Extract datetimes
         if sat_name == 'Landsat':
@@ -428,12 +441,63 @@ def check_opera_overpass_intersection(product_label, product_geom,
         # Get current time in UTC then Split into past and future
         now_utc = datetime.now(timezone.utc)
         for dt in dt_list:
+            # get local and event times from UTC time
+            dt_local = dt.astimezone()
+            dt_bbox = dt.astimezone(bbox_tz)
+
             if (sat_name == "Landsat"):
-                entry = f"{dt.strftime('%Y-%m-%d')
-                           } ({orbit_info}, {overlap_pct:.1f}% overlap)"
+                utc_date = dt.date()
+                local_date = dt_local.date()
+                bbox_date = dt_bbox.date()
+
+                # timezone abbreviations
+                local_tz_abbrev = dt_local.tzname()
+                # bbox GMT offset
+                bbox_offset = dt_bbox.utcoffset()
+                if bbox_offset is not None:
+                    total_minutes = bbox_offset.total_seconds() / 60
+                    hours = int(total_minutes // 60)
+                    gmt_str = f"GMT{hours:+03d}"         # e.g. GMT-05
+                else:
+                    gmt_str = ""
+                # Determine if dates differ
+                date_changed_local = (local_date != utc_date)
+                date_changed_bbox = (bbox_date != utc_date)
+                if not date_changed_local and not date_changed_bbox:
+                    # Show only UTC date when no timezone shifts the date
+                    entry = (
+                        f"{utc_date} "
+                        f"({orbit_info}, {overlap_pct:.1f}% overlap)"
+                    )
+                else:
+                    # At least one tz shifts the date: display all relevant 
+                    parts = [f"UTC: {utc_date}"]
+                    if date_changed_local:
+                        parts.append(f"Local: {local_date} ({local_tz_abbrev})")
+                    if date_changed_bbox:
+                        parts.append(f"Event: {bbox_date} ({gmt_str})")
+                    entry = (
+                        f"{' | '.join(parts)} "
+                        f"({orbit_info}, {overlap_pct:.1f}% overlap)"
+                    )
             else:
-                entry = f"{dt.strftime('%Y-%m-%d %H:%M:%S')
-                           } ({orbit_info}, {overlap_pct:.1f}% overlap)"
+                utc_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                local_str = dt_local.strftime('%Y-%m-%d %H:%M:%S')
+                bbox_str = dt_bbox.strftime('%Y-%m-%d %H:%M:%S')
+                local_tz_abbrev = dt_local.tzname()     # e.g., "PST"
+                bbox_offset = dt_bbox.utcoffset()
+                if bbox_offset is not None:
+                    total_minutes = bbox_offset.total_seconds() / 60
+                    hours = int(total_minutes // 60)
+                    gmt_str = f"GMT{hours:+03d}"
+                else:
+                    gmt_str = ""
+                entry = (
+                    f"{utc_str} UTC "
+                    f"(orbit: {orbit_info}, {overlap_pct:.1f}% overlap) "
+                    f"| Local time : {local_str} ({local_tz_abbrev}) "
+                    f"| Event time: {bbox_str} ({gmt_str})"
+                )
             if dt <= now_utc:
                 past_overpasses.append((dt, entry))
             else:
