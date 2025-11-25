@@ -3,17 +3,22 @@ import logging
 import os
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 from urllib.parse import urljoin
-
+from shapely.geometry import shape, Polygon
+from shapely import LinearRing, Point
+from lxml import etree
+from bs4 import BeautifulSoup
 import geopandas as gpd
 import requests
 from bs4 import BeautifulSoup
 from lxml import etree
 from shapely import LinearRing, Point, Polygon
 from shapely.geometry import shape
+from timezonefinder import TimezoneFinder
+from zoneinfo import ZoneInfo
 
 LOGGER = logging.getLogger("acquisition_utils")
 
@@ -229,7 +234,6 @@ def get_spatial_extent_km(polygon_geojson):
     gdf = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326")
     # Project to metric CRS (Web Mercator: EPSG 3857) to calculate in meters
     gdf_proj = gdf.to_crs(epsg=3857)
-
     # Get total bounds: [minx, miny, maxx, maxy]
     minx, miny, maxx, maxy = gdf_proj.total_bounds
 
@@ -244,7 +248,7 @@ def get_spatial_extent_km(polygon_geojson):
     return {
         "width_km": width_km,
         "height_km": height_km,
-        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  # Optional: area in km²
+        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  
     }
 
 
@@ -280,3 +284,225 @@ def is_date_in_text(iso_date_str: str, text: str) -> bool:
     dates_in_text = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", text)
 
     return date_only_str in dates_in_text
+
+
+def style_function_factory(dataset_color: str,
+                           inactive_color: str = "lightgray"):
+    def style_function(feature):
+        ok = feature["properties"].get("condition_ok")
+        if ok is True:
+            return {
+                "color": dataset_color,
+                "fillColor": dataset_color,
+                "weight": 2,
+                "fillOpacity": 0.5,
+            }
+        else:
+            return {
+                "color": inactive_color,
+                "fillColor": inactive_color,
+                "weight": 1,
+                "fillOpacity": 0.3,
+            }
+    return style_function
+
+
+def valid_drcs_datetime(s):
+    try:
+        dt = datetime.strptime(s, "%Y-%m-%dT%H:%M")
+        # Add system local timezone (makes it offset-aware)
+        local_tz = datetime.now().astimezone().tzinfo
+        return dt.replace(tzinfo=local_tz)
+
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid DRCS date-time format: '{s}'. "
+            "Expected format: YYYY-MM-DDTHH:MM"
+        )
+
+
+def check_opera_overpass_intersection(product_label, product_geom,
+                                      result_s1, result_s2,
+                                      result_l, event_date):
+    """
+    Check if a given product overlaps with any satellite overpass
+    after the event date, and produce a formatted text report.
+
+    Args:
+        product_label (str): e.g. 'OPERA_product_20251116_S1_...'
+        product_geom (shapely Polygon): product intersection with the AOI
+        result_s1, result_s2, result_l (dict): overpass info dicts
+        event_date (datetime): the event datetime
+
+    Returns:
+        str: formatted report of past recent and future overlapping overpasses
+    """
+
+    # first determine satellite
+    parts = product_label.split("_")
+    input_sat = parts[6]
+
+    if "S1" in input_sat:
+        result = result_s1
+        sat_name = "Sentinel-1"
+    elif "S2" in input_sat:
+        result = result_s2
+        sat_name = "Sentinel-2"
+    elif "L8" in input_sat or "L9" in input_sat:
+        result = result_l
+        sat_name = "Landsat"
+    else:
+        return f"Unknown satellite for product {product_label}"
+
+    if not result:
+        return f"No overpass results available for {sat_name}"
+
+    info_text = result.get("next_collect_info", "")
+    geometry_list = result.get("next_collect_geometry", [])
+
+    # Clean lines from headers/separators
+    lines = info_text.split("\n")
+    relevant_lines = []
+    for line in lines:
+        strip = line.strip()
+        if not strip.startswith("|") or strip.startswith("|   #"):
+            continue
+        if any(key in strip for key in ["Direction", "Path", "Row",
+                                        "Mission", "Passes dates"]):
+            continue
+        relevant_lines.append(line)
+
+    past_overpasses = []
+    future_overpasses = []
+
+    tf = TimezoneFinder()
+    # Loop over lines and corresponding geometries
+    for line, poly in zip(relevant_lines, geometry_list):
+        if not isinstance(poly, Polygon):
+            continue
+        if not product_geom.intersects(poly):
+            continue
+        inter = product_geom.intersection(poly)
+        if inter.is_empty:
+            continue
+        overlap_pct = (inter.area / product_geom.area) * 100.0
+
+        # get inter time zone
+        centroid = inter.centroid
+        lon, lat = centroid.x, centroid.y
+        timezone_name = tf.timezone_at(lat=lat, lng=lon)
+        if timezone_name is None:
+            # fallback if the polygon is offshore or ambiguous
+            timezone_name = tf.closest_timezone_at(lat=lat, lng=lon)
+
+        bbox_tz = ZoneInfo(timezone_name)
+
+        # Extract datetimes
+        if sat_name == 'Landsat':
+            dt_strings = re.findall(r"\d{2}/\d{2}/\d{4}", line)
+            dt_list = [
+                datetime.strptime(dt_str, "%m/%d/%Y"
+                                  ).replace(
+                                    tzinfo=timezone.utc)
+                for dt_str in dt_strings
+            ]
+        else:
+            dt_strings = re.findall(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+                                    line)
+            dt_list = [
+                datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S"
+                                  ).replace(
+                                    tzinfo=timezone.utc)
+                for dt_str in dt_strings
+            ]
+
+        # Keep only post-event
+        dt_list = [dt for dt in dt_list if dt >= event_date]
+        if not dt_list:
+            continue
+
+        # Orbit/Path info
+        columns = [c.strip() for c in line.split("|")]
+        if sat_name == "Landsat":
+            if len(columns) >= 5:
+                path = columns[2]
+                row = columns[3]
+                orbit_info = f"Path {path}, Row {row}"
+            else:
+                orbit_info = "Path/Row unknown"
+        elif sat_name == "Sentinel-1":
+            platform = columns[2]
+            rel_orbit = columns[3]
+            orbit_info = f"{platform}, Rel. orbit {rel_orbit}"
+        else:
+            # Sentinel-2
+            orbit_info = f"Rel. orbit {columns[2]}"
+
+        # Get current time in UTC then Split into past and future
+        now_utc = datetime.now(timezone.utc)
+        for dt in dt_list:
+            # get local and event times from UTC time
+            dt_local = dt.astimezone()
+            dt_bbox = dt.astimezone(bbox_tz)
+
+            if (sat_name == "Landsat"):
+                entry = (f"{dt.strftime('%Y-%m-%d')} "
+                         f": {orbit_info}, {overlap_pct:.1f}% overlap")
+            else:
+                utc_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                local_str = dt_local.strftime('%Y-%m-%d %H:%M:%S')
+                bbox_str = dt_bbox.strftime('%Y-%m-%d %H:%M:%S')
+                local_tz_abbrev = dt_local.tzname()     # e.g., "PST"
+                bbox_offset = dt_bbox.utcoffset()
+                if bbox_offset is not None:
+                    total_minutes = bbox_offset.total_seconds() / 60
+                    hours = int(total_minutes // 60)
+                    gmt_str = f"UTC{hours:+03d}"
+                else:
+                    gmt_str = ""
+                entry = (
+                    f"{utc_str} (UTC) "
+                    f"| Operator TZ: {local_str} ({local_tz_abbrev}) "
+                    f"| Event TZ: {bbox_str} ({gmt_str}) "
+                    f": {orbit_info}, {overlap_pct:.1f}% overlap "
+                    
+                )
+            if dt <= now_utc:
+                past_overpasses.append((dt, entry))
+            else:
+                future_overpasses.append((dt, entry))
+
+    # Check if we have no overlaps at all
+    if not past_overpasses and not future_overpasses:
+        return (f"No overlapping (with AOI) overpasses for "
+                f"{sat_name} after {event_date.strftime(
+                                    '%Y-%m-%d %H:%M:%S')}")
+
+    # Sort past: oldest first, future: most recent first
+    past_overpasses.sort(key=lambda x: x[0], reverse=False)
+    future_overpasses.sort(key=lambda x: x[0], reverse=False)
+
+    # Extract only the formatted strings for the report
+    past_overpasses_str = [x[1] for x in past_overpasses]
+    future_overpasses_str = [x[1] for x in future_overpasses]
+
+    # Build formatted report
+    report_lines = []
+    if past_overpasses_str:
+        report_lines.append(f"{sat_name} acquired data post-event on:")
+        for entry in past_overpasses_str:
+            report_lines.append(f"- {entry}")
+        if future_overpasses_str:
+            report_lines.append("and will acquire data on:")
+            for entry in future_overpasses_str:
+                report_lines.append(f"- {entry}")
+    else:
+        # No past overpasses
+        if future_overpasses_str:
+            report_lines.append(f"{sat_name} will acquire data on:")
+            for entry in future_overpasses_str:
+                report_lines.append(f"- {entry}")
+        else:
+            report_lines.append("No overlapping overpasses available.")
+
+    return "\n".join(report_lines)

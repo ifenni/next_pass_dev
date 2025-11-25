@@ -1,13 +1,13 @@
 import logging
 import time
-from datetime import date, datetime
+from datetime import timezone, datetime
 
 import leafmap
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from utils import bbox_type, create_polygon_from_kml, is_date_in_text
+from utils import bbox_type, create_polygon_from_kml
 from cloudiness import get_cloudiness
 
 
@@ -57,7 +57,7 @@ def find_print_available_opera_products(
         AOI = (lon_min, lat_min, lon_max, lat_max)
 
     if date_str == "today":
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
     else:
         today = datetime.strptime(date_str, "%Y-%m-%d").date()
     one_year_ago = today - relativedelta(months=12)
@@ -168,7 +168,8 @@ def export_opera_products(results_dict, timestamp_dir, result_s1=None):
         cell.font = bold_font
     # Freeze header row (so row 1 stays visible when scrolling)
     ws.freeze_panes = "A2"
-
+    cover_description = None
+    
     for dataset, data in results_dict.items():
         results = data.get("results", [])
         gdf = data.get("gdf")
@@ -275,6 +276,5 @@ def export_opera_products(results_dict, timestamp_dir, result_s1=None):
         "-> OPERA products metadata successfully saved"
         " to opera_granule_metadata.csv"
     )
-    LOGGER.info(
-        f"{cover_description}"
-    )
+    if cover_description:
+        LOGGER.info(f"{cover_description}")

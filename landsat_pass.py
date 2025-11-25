@@ -262,7 +262,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI, n_day_past: float) ->
                     "Path",
                     "Row",
                     "Mission",
-                    "Passes dates (P for past)",
+                    "Passes UTC dates (P for past)",
                     "AOI % Overlap",
                 ],
                 tablefmt="grid",

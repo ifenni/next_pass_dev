@@ -35,10 +35,13 @@ def sync_scratch_directory(
     scratch_dir.mkdir(exist_ok=True)
 
     # Extract expected filenames from URLs
-    expected_kml_names = {f"{mission_name}_{Path(url).stem}.kml" for url in urls}
+    expected_kml_names = {f"{mission_name
+                             }_{Path(url).stem}.kml" for url in urls}
 
     # Find existing KML files in scratch
-    existing_kml_files = {p.name for p in scratch_dir.glob(f"{mission_name}*.kml")}
+    existing_kml_files = {
+        p.name for p in scratch_dir.glob(f"{mission_name}*.kml")
+        }
 
     # Determine missing and obsolete files
     missing_files = expected_kml_names - existing_kml_files
@@ -76,7 +79,8 @@ def build_sentinel_collection(
     n_day_past: float,
     mission_name: str,
     out_filename: str,
-    logger: logging.Logger
+    logger: logging.Logger,
+    platforms: list | None = None
 ) -> Path:
     """
     Download, parse, and merge Sentinel acquisition plans into a GeoJSON file.
@@ -94,12 +98,35 @@ def build_sentinel_collection(
     SCRATCH_DIR.mkdir(exist_ok=True)
 
     # Sync scratch directory with online files
-    local_kml_paths = sync_scratch_directory(urls, mission_name, SCRATCH_DIR, logger)
-
+    local_kml_paths = sync_scratch_directory(
+                urls, mission_name, SCRATCH_DIR, logger
+                )
+    # Build platform mapping if platforms list is provided
+    platform_by_name = {}
+    if platforms:
+        platform_by_name = {
+            Path(u).stem.lower(): p for u, p in zip(urls, platforms)
+            }
     gdfs = []
 
     for kml_path in local_kml_paths:
         collection_path = SCRATCH_DIR / f"{kml_path.stem}.geojson"
+        platform = None
+        if platform_by_name:
+            stem = kml_path.stem.lower()
+            # make sure we get the platform from platform_by_name
+            # first attempt
+            platform = platform_by_name.get(stem)
+            # second attempt
+            if platform is None and "_" in stem:
+                stem_id = "_".join(stem.split("_")[1:])
+                platform = platform_by_name.get(stem_id)
+                # last resort
+            if platform is None:
+                for key, value in platform_by_name.items():
+                    if key in stem:
+                        platform = value
+                        break
 
         if collection_path.exists():
             logger.info(f"Using cached file: {collection_path}")
@@ -121,8 +148,9 @@ def build_sentinel_collection(
                 logger.error(f"Failed parsing {kml_path}: {e}")
                 continue
 
-        gdfs.append(gdf)
+        gdf["platform"] = platform
 
+        gdfs.append(gdf)
     if not gdfs:
         logger.error("No valid GeoDataFrames created.")
         return Path()

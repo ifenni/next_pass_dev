@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import yagmail
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +15,19 @@ from opera_products import (export_opera_products,
                             find_print_available_opera_products)
 from plot_maps import make_opera_granule_map, make_overpasses_map
 from sentinel_pass import next_sentinel_pass
-from utils import Tee, bbox_type, create_polygon_from_kml
+from utils import (Tee,
+                   bbox_type, create_polygon_from_kml,
+                   valid_drcs_datetime)
+from opera_products import (
+    find_print_available_opera_products,
+    export_opera_products
+)
+from plot_maps import (
+    make_opera_granule_map,
+    make_opera_granule_drcs_map,
+    make_overpasses_map
+)
+
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -83,7 +96,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--event-date",
         default="today",
         type=str,
-        help="Date of the event to consider for OPERA products",
+        help="Date (UTC) in format YYYY-MM-dd to consider for OPERA products",
     )
     parser.add_argument(
         "-p",
@@ -111,6 +124,14 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send an email with the results.",
     )
+    parser.add_argument(
+        "-g",
+        "--generate-drcs-html",
+        type=valid_drcs_datetime,
+        metavar="YYYY-MM-DDTHH:MM",
+        help=("Generate DRCS HTML file using a UTC event date "
+              " in format YYYY-MM-DDTHH:MM")
+    )
     return parser
 
 
@@ -127,7 +148,6 @@ def find_next_overpass(args) -> dict:
     if isinstance(bbox, str):
         # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
-        print(list(geometry.exterior.coords)[:5])
         centroid = geometry.centroid
         lat_min = centroid.y
         lon_min = centroid.x
@@ -205,7 +225,6 @@ def send_email(subject, body, attachment=None):
     :param body: Body of the email.
     :param attachment: Optional attachment file path.
     """
-    import yagmail
 
     GMAIL_USER = "aria.hazards.jpl@gmail.com"
     GMAIL_PSWD = os.environ["GMAIL_APP_PSWD"]
@@ -263,7 +282,7 @@ def main(cli_args=None):
     timestamp_dir = Path(f"nextpass_outputs_{timestamp}")
     timestamp_dir.mkdir(parents=True, exist_ok=True)
     log_file = timestamp_dir / "run_output.txt"
-    log = open(log_file, "w")
+    log = open(log_file, "w", encoding="utf-8")
     sys.stdout = sys.stderr = Tee(sys.__stdout__, log)
     print(f"Log file created: {log_file}")
     print(f"BBox = {format_arg(args.bbox)}\n")
@@ -292,11 +311,16 @@ def main(cli_args=None):
         )
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
-        return timestamp_dir
+
+    if args.generate_drcs_html is not None and args.functionality in ("both"):
+        make_opera_granule_drcs_map(args.generate_drcs_html, results_opera,
+                                    result_s1, result_s2, result_l,
+                                    args.bbox, timestamp_dir
+                                    )
 
     if args.email:
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
-        with open(log_file, "r") as f:
+        with open(log_file, "w", encoding="utf-8") as f:
             lines = f.readlines()
             email_body = "".join(lines[4:])
         send_email(
@@ -309,6 +333,8 @@ def main(cli_args=None):
         print("=========================================")
         print("Alert emailed to recipients.")
         print("=========================================")
+
+    return timestamp_dir
 
 
 if __name__ == "__main__":

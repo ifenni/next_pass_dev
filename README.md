@@ -105,6 +105,19 @@ python next_pass.py -b /path/to/aoi.kml
   python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c
   ```
 
+- **Generate old OPERA products** for a previous event date (YYYY-MM-DD):
+  
+  ```bash
+  python next_pass.py -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
+  ```
+
+- **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM 
+  (Please consider replacing the date in the example with a recent event date):
+
+  ```bash
+  python next_pass.py -b 17.32 18.80 -78.61 -75.58 -g 2025-11-18T01:00
+  ```
+
 > Use `-h/--help` to see all flags and defaults.
 
 ---
