@@ -96,7 +96,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--event-date",
         default="today",
         type=str,
-        help="Date (UTC) of the event to consider for OPERA products",
+        help="Date (UTC) in format YYYY-MM-dd to consider for OPERA products",
     )
     parser.add_argument(
         "-p",
