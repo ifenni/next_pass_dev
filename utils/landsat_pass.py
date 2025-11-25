@@ -10,7 +10,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
-from utils import arcgis_to_polygon
+from utils.utils import arcgis_to_polygon
 
 # Configure logging
 logging.basicConfig(

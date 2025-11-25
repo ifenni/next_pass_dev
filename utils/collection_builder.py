@@ -6,7 +6,7 @@ from typing import List
 import geopandas as gpd
 import pandas as pd
 
-from utils import download_kml, parse_kml
+from utils.utils import download_kml, parse_kml
 
 
 SCRATCH_DIR = Path.cwd() / "scratch"

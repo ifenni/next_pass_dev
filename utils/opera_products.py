@@ -7,8 +7,8 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from utils import bbox_type, create_polygon_from_kml
-from cloudiness import get_cloudiness
+from utils.utils import bbox_type, create_polygon_from_kml
+from utils.cloudiness import get_cloudiness
 
 
 # Configure logging

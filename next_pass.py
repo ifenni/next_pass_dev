@@ -10,19 +10,19 @@ from pathlib import Path
 
 from shapely.geometry import Point, box
 
-from landsat_pass import next_landsat_pass
-from opera_products import (export_opera_products,
+from utils.landsat_pass import next_landsat_pass
+from utils.opera_products import (export_opera_products,
                             find_print_available_opera_products)
-from plot_maps import make_opera_granule_map, make_overpasses_map
-from sentinel_pass import next_sentinel_pass
-from utils import (Tee,
+from utils.plot_maps import make_opera_granule_map, make_overpasses_map
+from utils.sentinel_pass import next_sentinel_pass
+from utils.utils import (Tee,
                    bbox_type, create_polygon_from_kml,
                    valid_drcs_datetime)
-from opera_products import (
+from utils.opera_products import (
     find_print_available_opera_products,
     export_opera_products
 )
-from plot_maps import (
+from utils.plot_maps import (
     make_opera_granule_map,
     make_opera_granule_drcs_map,
     make_overpasses_map

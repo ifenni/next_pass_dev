@@ -13,7 +13,7 @@ from jinja2 import Template
 from matplotlib.colors import to_hex
 from shapely.geometry import Polygon, box
 
-from utils import (
+from utils.utils import (
     bbox_type,
     check_opera_overpass_intersection,
     create_polygon_from_kml,

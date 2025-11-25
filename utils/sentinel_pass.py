@@ -7,9 +7,9 @@ import pandas as pd
 from tabulate import tabulate
 from tqdm import tqdm
 
-from cloudiness import make_get_cloudiness_for_row
-from collection_builder import build_sentinel_collection
-from utils import find_intersecting_collects, scrape_esa_download_urls
+from utils.cloudiness import make_get_cloudiness_for_row
+from utils.collection_builder import build_sentinel_collection
+from utils.utils import find_intersecting_collects, scrape_esa_download_urls
 
 LOGGER = logging.getLogger("sentinel_pass")
 
