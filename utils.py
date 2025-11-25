@@ -461,7 +461,7 @@ def check_opera_overpass_intersection(product_label, product_geom,
                 else:
                     gmt_str = ""
                 entry = (
-                    f"{utc_str} (UTC)"
+                    f"{utc_str} (UTC) "
                     f"| {local_str} ({local_tz_abbrev}) "
                     f"| {bbox_str} ({gmt_str}) "
                     f": {orbit_info}, {overlap_pct:.1f}% overlap "
