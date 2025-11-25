@@ -457,13 +457,13 @@ def check_opera_overpass_intersection(product_label, product_geom,
                 if bbox_offset is not None:
                     total_minutes = bbox_offset.total_seconds() / 60
                     hours = int(total_minutes // 60)
-                    gmt_str = f"GMT{hours:+03d}"
+                    gmt_str = f"UTC{hours:+03d}"
                 else:
                     gmt_str = ""
                 entry = (
                     f"{utc_str} (UTC) "
-                    f"| {local_str} ({local_tz_abbrev}) "
-                    f"| {bbox_str} ({gmt_str}) "
+                    f"| Local: {local_str} ({local_tz_abbrev}) "
+                    f"| Event: {bbox_str} ({gmt_str}) "
                     f": {orbit_info}, {overlap_pct:.1f}% overlap "
                     
                 )
