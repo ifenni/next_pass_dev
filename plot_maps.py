@@ -304,7 +304,8 @@ def make_opera_granule_drcs_map(
             else:
                 product_geom = geom.intersection(AOI_polygon)
                 report = check_opera_overpass_intersection(
-                    label, product_geom, result_s1, result_s2, result_l, event_date
+                    label, product_geom, result_s1, result_s2, result_l,
+                    event_date
                 )
                 color = "lightgray"
                 sentences_html = (
@@ -327,7 +328,7 @@ def make_opera_granule_drcs_map(
             # Add marker with conditional color
             folium.Marker(
                 location=[centroid.y + pos_delta, centroid.x + pos_delta],
-                popup=folium.Popup(popup_html, max_width=400),
+                popup=folium.Popup(popup_html, max_width=800),
                 icon=folium.Icon(
                     color=color if condition_ok else "lightgray",
                     icon_color="white",

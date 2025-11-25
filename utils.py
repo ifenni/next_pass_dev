@@ -446,40 +446,8 @@ def check_opera_overpass_intersection(product_label, product_geom,
             dt_bbox = dt.astimezone(bbox_tz)
 
             if (sat_name == "Landsat"):
-                utc_date = dt.date()
-                local_date = dt_local.date()
-                bbox_date = dt_bbox.date()
-
-                # timezone abbreviations
-                local_tz_abbrev = dt_local.tzname()
-                # bbox GMT offset
-                bbox_offset = dt_bbox.utcoffset()
-                if bbox_offset is not None:
-                    total_minutes = bbox_offset.total_seconds() / 60
-                    hours = int(total_minutes // 60)
-                    gmt_str = f"GMT{hours:+03d}"         # e.g. GMT-05
-                else:
-                    gmt_str = ""
-                # Determine if dates differ
-                date_changed_local = (local_date != utc_date)
-                date_changed_bbox = (bbox_date != utc_date)
-                if not date_changed_local and not date_changed_bbox:
-                    # Show only UTC date when no timezone shifts the date
-                    entry = (
-                        f"{utc_date} "
-                        f"({orbit_info}, {overlap_pct:.1f}% overlap)"
-                    )
-                else:
-                    # At least one tz shifts the date: display all relevant 
-                    parts = [f"UTC: {utc_date}"]
-                    if date_changed_local:
-                        parts.append(f"Local: {local_date} ({local_tz_abbrev})")
-                    if date_changed_bbox:
-                        parts.append(f"Event: {bbox_date} ({gmt_str})")
-                    entry = (
-                        f"{' | '.join(parts)} "
-                        f"({orbit_info}, {overlap_pct:.1f}% overlap)"
-                    )
+                entry = (f"{dt.strftime('%Y-%m-%d')} "
+                         f": {orbit_info}, {overlap_pct:.1f}% overlap")
             else:
                 utc_str = dt.strftime('%Y-%m-%d %H:%M:%S')
                 local_str = dt_local.strftime('%Y-%m-%d %H:%M:%S')
@@ -493,10 +461,11 @@ def check_opera_overpass_intersection(product_label, product_geom,
                 else:
                     gmt_str = ""
                 entry = (
-                    f"{utc_str} UTC "
-                    f"(orbit: {orbit_info}, {overlap_pct:.1f}% overlap) "
-                    f"| Local time : {local_str} ({local_tz_abbrev}) "
-                    f"| Event time: {bbox_str} ({gmt_str})"
+                    f"{utc_str} (UTC)"
+                    f"| {local_str} ({local_tz_abbrev}) "
+                    f"| {bbox_str} ({gmt_str}) "
+                    f": {orbit_info}, {overlap_pct:.1f}% overlap "
+                    
                 )
             if dt <= now_utc:
                 past_overpasses.append((dt, entry))
@@ -505,11 +474,9 @@ def check_opera_overpass_intersection(product_label, product_geom,
 
     # Check if we have no overlaps at all
     if not past_overpasses and not future_overpasses:
-        return f"No overlapping overpasses for {sat_name
-                                                } after {
-                                                    event_date.strftime(
-                                                        '%Y-%m-%d %H:%M:%S'
-                                                        )}"
+        return (f"No overlapping (with AOI) overpasses for "
+                f"{sat_name} after {event_date.strftime(
+                                    '%Y-%m-%d %H:%M:%S')}")
 
     # Sort past: oldest first, future: most recent first
     past_overpasses.sort(key=lambda x: x[0], reverse=False)
