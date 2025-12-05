@@ -38,8 +38,7 @@ setup(
     install_requires=read_requirements(),
     entry_points={
         "console_scripts": [
-            # 👇 This is the CLI name you'll run in the shell
-            "next_pass.py=next_pass:main",
+            "next-pass=next_pass:main",
         ],
     },
     classifiers=[
