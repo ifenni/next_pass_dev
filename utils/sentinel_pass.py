@@ -128,7 +128,9 @@ def unique_geometry_per_orbit(collects: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     has_cloudiness = "cloudiness" in collects.columns
 
     # Ensure begin_date is datetime
-    collects["begin_date"] = pd.to_datetime(collects["begin_date"], errors="raise")
+    collects["begin_date"] = pd.to_datetime(
+        collects["begin_date"], format="ISO8601", errors="raise"
+    )
 
     # Aggregation dictionary
     agg_dict: dict = {
