@@ -8,39 +8,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List
 
-import yagmail
-from shapely.geometry import Point, box
-
-from utils.landsat_pass import next_landsat_pass
-from utils.opera_products import (
-    export_opera_products,
-    find_print_available_opera_products,
-)
-from utils.plot_maps import (
-    make_opera_granule_drcs_map,
-    make_opera_granule_map,
-    make_overpasses_map,
-)
-from utils.sentinel_pass import next_sentinel_pass
-from utils.utils import Tee, bbox_type, create_polygon_from_kml, valid_drcs_datetime
-
 LOGGER = logging.getLogger("next_pass")
 
 EXAMPLE = """
 EXAMPLE USAGE:
 Point (lat/lon pair):
-  python next_pass.py -b 34.20 -118.17
+  next-pass -b 34.20 -118.17
 
 Bounding Box (SNWE):
-  python next_pass.py -b 34.15 34.25 -118.20 -118.15
+  next-pass -b 34.15 34.25 -118.20 -118.15
 
 KML File:
-  python next_pass.py -b /path/to/file.kml
+  next-pass -b /path/to/file.kml
 """
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for CLI inputs."""
+    from utils.utils import valid_drcs_datetime
+
     desc = "Find next satellite overpass date."
     parser = argparse.ArgumentParser(
         description=desc,
@@ -136,6 +122,12 @@ def create_parser() -> argparse.ArgumentParser:
 
 def find_next_overpass(args: argparse.Namespace) -> dict:
     """Main logic for finding the next satellite overpasses."""
+    from shapely.geometry import Point, box
+
+    from utils.landsat_pass import next_landsat_pass
+    from utils.sentinel_pass import next_sentinel_pass
+    from utils.utils import bbox_type, create_polygon_from_kml
+
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
 
@@ -229,6 +221,8 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
     attachment : Path or None
         Optional attachment file path.
     """
+    import yagmail
+
     gmail_user = "aria.hazards.jpl@gmail.com"
     gmail_pswd = os.environ["GMAIL_APP_PSWD"]
     yag = yagmail.SMTP(gmail_user, gmail_pswd)
@@ -290,6 +284,17 @@ def main(cli_args: Any = None):
         level=args.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    from utils.opera_products import (
+        export_opera_products,
+        find_print_available_opera_products,
+    )
+    from utils.plot_maps import (
+        make_opera_granule_drcs_map,
+        make_opera_granule_map,
+        make_overpasses_map,
+    )
+    from utils.utils import Tee
 
     # Create a timestamp string
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
