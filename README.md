@@ -69,24 +69,24 @@ pip install -e .
 
 ## Usage
 
-The main entry point is `next_pass.py`. Choose one AOI input form and add options as needed.
+The main entry point is `next-pass`. Choose one AOI input form and add options as needed.
 
 ### 1) Point (lat, lon)
 
 ```bash
-next_pass.py -b 34.20 -118.17
+next-pass -b 34.20 -118.17
 ```
 
 ### 2) Bounding box (SNWE = South North West East)
 
 ```bash
-next_pass.py -b 34.15 34.25 -118.20 -118.15
+next-pass -b 34.15 34.25 -118.20 -118.15
 ```
 
 ### 3) KML file (polygon)
 
 ```bash
-next_pass.py -b /path/to/aoi.kml
+next-pass -b /path/to/aoi.kml
 ```
 
 ### Options
@@ -94,32 +94,32 @@ next_pass.py -b /path/to/aoi.kml
 - **Satellite** subset (e.g., S1 only) and **email** the results:
 
   ```bash
-  next_pass.py -b 50 52 -102 -100 -s sentinel-1 --email
+  next-pass -b 50 52 -102 -100 -s sentinel-1 --email
   ```
 
 - **Restrict OPERA products** considered during the search (space‑separated list):
 
   ```bash
-  next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
+  next-pass -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
   ```
 
 - **Predict cloudiness** for the next S1/S2 overpasses (adds a cloud estimate column):
 
   ```bash
-  next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c
+  next-pass -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c
   ```
 
 - **Generate old OPERA products** for a previous event date (YYYY-MM-DD):
   
   ```bash
-  next_pass.py -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
+  next_pass -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
   ```
 
 - **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM 
   (Please consider replacing the date in the example with a recent event date):
 
   ```bash
-  next_pass.py -b 17.32 18.80 -78.61 -75.58 -g 2025-11-18T01:00
+  next-pass -b 17.32 18.80 -78.61 -75.58 -g 2025-11-18T01:00
   ```
 
 > Use `-h/--help` to see all flags and defaults.
