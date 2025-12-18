@@ -197,7 +197,7 @@ def next_landsat_pass(
                     geom = feature.get("geometry")
                     polygon = arcgis_to_polygon(geom)
 
-                    if geometryAOI.type == "Point":
+                    if geometryAOI.geom_type == "Point":
                         intersection_pct = 100
                     elif polygon and polygon.is_valid and geometryAOI.is_valid:
                         intersection = polygon.intersection(geometryAOI)

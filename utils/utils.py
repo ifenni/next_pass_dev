@@ -134,16 +134,29 @@ def find_intersecting_collects(
     if orbit_relative is not None:
         intersects = intersects[intersects["orbit_relative"] == orbit_relative]
 
-    if geometryAOI.type == "Point":
-        overlap = 100
-    else:
-        overlap = 100 * (
-            intersects.geometry.intersection(geometryAOI).area / geometryAOI.area
-        )
-    intersects["intersection_pct"] = overlap
+    if geometryAOI.geom_type == "Point":
+        intersects["intersection_pct"] = 100
+        return intersects.sort_values(
+            ["intersection_pct", "begin_date"],
+            ascending=[False, True],
+        ).reset_index(drop=True)
 
+    # No we project before calculating overlap 
+    aoi_series = gpd.GeoSeries([geometryAOI], crs=gdf.crs)
+
+    projected_crs = aoi_series.estimate_utm_crs()
+
+    intersects_proj = intersects.to_crs(projected_crs)
+    aoi_proj = aoi_series.to_crs(projected_crs)
+
+    intersects["intersection_pct"] = (
+                100 * intersects_proj.geometry
+                .intersection(aoi_proj.iloc[0]).area
+                / aoi_proj.area.iloc[0]
+            )
     return intersects.sort_values(
-        ["intersection_pct", "begin_date"], ascending=[False, True]
+        ["intersection_pct", "begin_date"],
+        ascending=[False, True],
     ).reset_index(drop=True)
 
 

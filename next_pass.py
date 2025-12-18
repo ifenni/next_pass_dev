@@ -239,7 +239,7 @@ def run_next_pass(
     bbox: List[float],
     number_of_dates: int = 5,
     date: str | None = None,
-    functionality: str = "opera_search",
+    functionality: str = "both",
 ):
     """
     Programmatic entry point for next_pass.
