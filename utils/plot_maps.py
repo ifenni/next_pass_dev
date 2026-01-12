@@ -17,6 +17,7 @@ from shapely.geometry import Polygon, box
 
 from utils.utils import (
     bbox_type,
+    bbox_to_geometry,
     check_opera_overpass_intersection,
     create_polygon_from_kml,
     style_function_factory,
@@ -82,17 +83,9 @@ def make_opera_granule_map(
 
     # Parse AOI center for initial map centering
     bbox_parsed = bbox_type(bbox)
-    if isinstance(bbox_parsed, str):
-        geometry = create_polygon_from_kml(bbox_parsed)
-        aoi = geometry.bounds
-        aoi_polygon = geometry
-    else:
-        lat_min, lat_max, lon_min, lon_max = bbox_parsed
-        aoi = (lon_min, lat_min, lon_max, lat_max)
-        aoi_polygon = box(*aoi)
-
-    center_lat = (aoi[1] + aoi[3]) / 2
-    center_lon = (aoi[0] + aoi[2]) / 2
+    aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
+    center_lat = centroid.y
+    center_lon = centroid.x
 
     # Initialize base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
@@ -242,17 +235,9 @@ def make_opera_granule_drcs_map(
 
     # Parse AOI
     bbox_parsed = bbox_type(bbox)
-    if isinstance(bbox_parsed, str):
-        geometry = create_polygon_from_kml(bbox_parsed)
-        aoi = geometry.bounds
-        aoi_polygon = geometry
-    else:
-        lat_min, lat_max, lon_min, lon_max = bbox_parsed
-        aoi = (lon_min, lat_min, lon_max, lat_max)
-        aoi_polygon = box(*aoi)
-
-    center_lat = (aoi[1] + aoi[3]) / 2
-    center_lon = (aoi[0] + aoi[2]) / 2
+    aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
+    center_lat = centroid.y
+    center_lon = centroid.x
 
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
 
@@ -379,7 +364,8 @@ def make_opera_granule_drcs_map(
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
-        style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
+        style_function=lambda x: {"color": "black",
+                                  "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
 
     folium.LayerControl().add_to(map_object)
@@ -452,17 +438,9 @@ def make_overpasses_map(
 
     # Parse AOI
     bbox_parsed = bbox_type(bbox)
-    if isinstance(bbox_parsed, str):
-        geometry = create_polygon_from_kml(bbox_parsed)
-        aoi = geometry.bounds
-        aoi_polygon = geometry
-    else:
-        lat_min, lat_max, lon_min, lon_max = bbox_parsed
-        aoi = (lon_min, lat_min, lon_max, lat_max)
-        aoi_polygon = box(*aoi)
-
-    center_lat = (aoi[1] + aoi[3]) / 2
-    center_lon = (aoi[0] + aoi[2]) / 2
+    aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
+    center_lat = centroid.y
+    center_lon = centroid.x
 
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=5)
     aoi_geojson = gpd.GeoSeries([aoi_polygon]).__geo_interface__

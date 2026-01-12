@@ -7,9 +7,10 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from pathlib import Path
 
 from utils.cloudiness import get_cloudiness
-from utils.utils import bbox_type, create_polygon_from_kml
+from utils.utils import bbox_type, bbox_to_geometry
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ def find_print_available_opera_products(
     number_of_dates: int,
     date_str: str,
     list_of_products: list | None,
+    timestamp_dir: Path,
 ) -> dict:
     """
     Query NASA/OPERA products over an AOI and return recent granules.
@@ -66,15 +68,7 @@ def find_print_available_opera_products(
     # Parse the bbox argument
     bbox_parsed = bbox_type(bbox)
 
-    if isinstance(bbox_parsed, str):
-        # Create geometry from KML file
-        geometry = create_polygon_from_kml(bbox_parsed)
-        aoi = geometry.bounds
-    else:
-        # Extract bounding box
-        lat_min, lat_max, lon_min, lon_max = bbox_parsed
-        # (minx, miny, maxx, maxy)
-        aoi = (lon_min, lat_min, lon_max, lat_max)
+    aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
 
     if date_str == "today":
         today = datetime.now(timezone.utc).date()
