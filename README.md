@@ -99,6 +99,8 @@ next-pass -b "POLYGON ((-123.1 47.33, -123.16 47.28, -123.33 47.33, -123.25 47.3
 
 ```bash
 next-pass -b "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.dc03b8d7d3aa06ec27afb812ac02d6afa8b5f0ce.002.1"
+```
+```bash
 next-pass -b AOI_from_url.geojson
 ```
 
