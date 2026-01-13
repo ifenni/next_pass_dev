@@ -89,6 +89,21 @@ next-pass -b 34.15 34.25 -118.20 -118.15
 next-pass -b /path/to/aoi.kml
 ```
 
+### 4) WKT coordinates (polygon or point)
+
+```bash
+next-pass -b "POLYGON ((-123.1 47.33, -123.16 47.28, -123.33 47.33, -123.25 47.34, -123.19 47.32, -123.15 47.35, -123.1 47.33))"
+```
+
+### 5) link to .geojson file (online or local)
+
+```bash
+next-pass -b "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.dc03b8d7d3aa06ec27afb812ac02d6afa8b5f0ce.002.1"
+```
+```bash
+next-pass -b AOI_from_url.geojson
+```
+
 ### Options
 
 - **Satellite** subset (e.g., S1 only) and **email** the results:

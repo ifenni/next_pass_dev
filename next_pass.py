@@ -41,7 +41,9 @@ def create_parser() -> argparse.ArgumentParser:
         type=str,
         help=(
             "Bounding box: Either 2 or 4 floats (point or bbox) "
-            "or a path to a .kml location file"
+            "or a WKT-format string (POLYGON or POINT) "
+            "or a link to a .geojson file (online)"
+            "or a path to a .kml or .geojson location file"
         ),
     )
     parser.add_argument(
@@ -120,31 +122,21 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def find_next_overpass(args: argparse.Namespace) -> dict:
+def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     """Main logic for finding the next satellite overpasses."""
-    from shapely.geometry import Point, box
 
     from utils.landsat_pass import next_landsat_pass
     from utils.sentinel_pass import next_sentinel_pass
-    from utils.utils import bbox_type, create_polygon_from_kml
+    from utils.utils import bbox_type, bbox_to_geometry
 
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
 
     pred_cloudiness = bool(args.cloudiness)
 
-    if isinstance(bbox, str):
-        # Create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
-        geometry = create_polygon_from_kml(bbox)
-        centroid = geometry.centroid
-        lat_min = centroid.y
-        lon_min = centroid.x
-    else:
-        lat_min, lat_max, lon_min, lon_max = bbox
-        if lat_min == lat_max and lon_min == lon_max:
-            geometry = Point(lon_min, lat_min)
-        else:
-            geometry = box(lon_min, lat_min, lon_max, lat_max)
+    geometry, aoi, centroid = bbox_to_geometry(bbox, timestamp_dir)
+    lat_min = centroid.y
+    lon_min = centroid.x
 
     if args.sat == "all":
         LOGGER.info("Fetching Sentinel-1 data...")
@@ -317,7 +309,7 @@ def main(cli_args: Any = None):
 
     # Overpasses functionality
     if args.functionality in ("both", "overpasses"):
-        result = find_next_overpass(args)
+        result = find_next_overpass(args, timestamp_dir)
         result_s1 = result["sentinel-1"]
         result_s2 = result["sentinel-2"]
         result_l = result["landsat"]
@@ -348,6 +340,7 @@ def main(cli_args: Any = None):
             args.number_of_dates,
             args.event_date,
             args.products,
+            timestamp_dir
         )
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)

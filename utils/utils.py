@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import re
+import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,10 +16,11 @@ import geopandas as gpd
 import requests
 from bs4 import BeautifulSoup
 from lxml import etree
-from shapely import LinearRing, Point, Polygon
-from shapely.geometry import shape
+from shapely import LinearRing, Point, Polygon, wkt
+from shapely.geometry import shape, box
 from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
+from urllib.parse import urlparse
 
 LOGGER = logging.getLogger("acquisition_utils")
 
@@ -55,6 +57,15 @@ def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
         clean_hrefs.append(urljoin("https://sentinels.copernicus.eu", href))
 
     return clean_hrefs
+
+
+def is_url(s: str) -> bool:
+    parsed = urlparse(s)
+    return parsed.scheme in ("http", "https")
+
+
+def is_existing_path(s: str) -> bool:
+    return Path(s).expanduser().exists()
 
 
 def download_kml(url: str, out_path: str = "collection.kml") -> Path:
@@ -141,7 +152,7 @@ def find_intersecting_collects(
             ascending=[False, True],
         ).reset_index(drop=True)
 
-    # No we project before calculating overlap 
+    # No we project before calculating overlap
     aoi_series = gpd.GeoSeries([geometryAOI], crs=gdf.crs)
 
     projected_crs = aoi_series.estimate_utm_crs()
@@ -158,6 +169,63 @@ def find_intersecting_collects(
         ["intersection_pct", "begin_date"],
         ascending=[False, True],
     ).reset_index(drop=True)
+
+
+def download_url_to_file(
+    url: str,
+    output_path: str | Path,
+    timeout: int = 30,
+    ensure_geojson: bool = True,
+) -> Path:
+    """
+    Download a URL and save its content to a file (GeoJSON-safe).
+    """
+    output_path = Path(output_path)
+
+    if ensure_geojson and output_path.suffix.lower() != ".geojson":
+        output_path = output_path.with_suffix(".geojson")
+
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+
+    # Parse JSON to ensure validity
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise ValueError(f"Response from {url} is not valid JSON") from e
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+    return output_path
+
+
+def geometry_from_file(path: str | Path):
+    """
+    Read a geometry from a spatial file (KML or GeoJSON).
+    """
+    path = Path(path)
+    suffix = path.suffix.lower()
+
+    # ---- KML ----
+    if suffix == ".kml":
+        return create_polygon_from_kml(str(path))
+
+    # ---- GeoJSON ----
+    if suffix in (".geojson", ".json"):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # FeatureCollection
+        if data["type"] == "FeatureCollection":
+            geometries = [shape(f["geometry"]) for f in data["features"]]
+            return geometries[0] if len(geometries) == 1 else gpd.GeoSeries(geometries).unary_union
+
+        # Single geometry or Feature
+        return shape(data.get("geometry", data))
+
+    raise ValueError(f"Unsupported spatial file format: {path}")
 
 
 def bbox_type(arg_coords):
@@ -177,9 +245,12 @@ def bbox_type(arg_coords):
 
     if (
         len(arg_coords) == 1
-        and arg_coords[0].lower().endswith(".kml")
+        and arg_coords[0].lower().endswith((".kml", ".geojson"))
         and os.path.isfile(arg_coords[0])
-    ):
+    ) or (
+         len(arg_coords) == 1
+         and arg_coords[0].startswith(("POINT", "POLYGON"))
+    ) or (is_url(arg_coords[0])):
         return arg_coords[0]
 
     try:
@@ -229,8 +300,42 @@ def bbox_type(arg_coords):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Provide either 2 or 4 float values " "or a path to a valid .kml file."
+            "Provide either 2 or 4 float values "
+            "or a path to a valid .kml file."
         )
+
+
+def bbox_to_geometry(bbox, timestamp_dir):
+    if isinstance(bbox, str):
+        bbox_clean = bbox.strip()
+        bbox_upper = bbox_clean.upper()
+        if bbox_upper.startswith(("POINT", "POLYGON")):
+            geometry = wkt.loads(bbox_clean)
+        else:
+            # if URL, download
+            if is_url(bbox_clean):
+                filename = "AOI_from_url.geojson"
+                file_path = Path(timestamp_dir) / filename
+                if not file_path.exists():
+                    bbox_path = download_url_to_file(
+                        bbox_clean,
+                        file_path
+                    )
+                else:
+                    bbox_path = Path(file_path)
+            # if path (kml or geojson)
+            else:
+                bbox_path = Path(bbox_clean)
+
+            geometry = geometry_from_file(bbox_path)
+    else:
+        lat_min, lat_max, lon_min, lon_max = bbox
+        if lat_min == lat_max and lon_min == lon_max:
+            geometry = Point(lon_min, lat_min)
+        else:
+            geometry = box(lon_min, lat_min, lon_max, lat_max)
+
+    return geometry, geometry.bounds, geometry.centroid
 
 
 def arcgis_to_polygon(geometry):
@@ -261,7 +366,7 @@ def get_spatial_extent_km(polygon_geojson):
     return {
         "width_km": width_km,
         "height_km": height_km,
-        "area_km2": gdf_proj.geometry.area.sum() / 1e6,  
+        "area_km2": gdf_proj.geometry.area.sum() / 1e6,
     }
 
 
