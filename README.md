@@ -127,7 +127,7 @@ next-pass -b AOI_from_url.geojson
 - **Generate old OPERA products** for a previous event date (YYYY-MM-DD):
   
   ```bash
-  next_pass -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
+  next-pass -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
   ```
 
 - **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM 
