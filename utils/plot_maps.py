@@ -13,13 +13,13 @@ import matplotlib.pyplot as plt
 from branca.element import MacroElement
 from jinja2 import Template
 from matplotlib.colors import to_hex
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
+
 
 from utils.utils import (
     bbox_type,
     bbox_to_geometry,
     check_opera_overpass_intersection,
-    create_polygon_from_kml,
     style_function_factory,
 )
 
