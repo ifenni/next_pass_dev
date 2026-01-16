@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
@@ -128,6 +129,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     from utils.landsat_pass import next_landsat_pass
     from utils.sentinel_pass import next_sentinel_pass
     from utils.utils import bbox_type, bbox_to_geometry
+    from utils.cloudiness import api_limit_reached
 
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
@@ -145,6 +147,12 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         )
 
         LOGGER.info("Fetching Sentinel-2 data...")
+
+        if pred_cloudiness and not api_limit_reached():
+            LOGGER.info(
+                "Waiting 1 minute to avoid hitting"
+                " cumulative weather API quota...")
+            time.sleep(60)
         sentinel2 = next_sentinel_pass(
             "sentinel2", geometry, n_day_past, pred_cloudiness
         )
