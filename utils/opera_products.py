@@ -70,14 +70,24 @@ def find_print_available_opera_products(
 
     aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
 
-    if date_str == "today":
-        today = datetime.now(timezone.utc).date()
+    is_range = False
+    
+    # Check if the user provided a strict date range
+    if "/" in date_str:
+        start_str, end_str = date_str.split("/")
+        start_date_recent = f"{start_str}T00:00:00"
+        end_date_recent = f"{end_str}T23:59:59"
+        is_range = True
     else:
-        today = datetime.strptime(date_str, "%Y-%m-%d").date()
+        # Standard Single Date Logic
+        if date_str == "today":
+            today = datetime.now(timezone.utc).date()
+        else:
+            today = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-    one_year_ago = today - relativedelta(months=12)
-    start_date_recent = f"{one_year_ago:%Y-%m-%d}T00:00:00"
-    end_date_recent = f"{today:%Y-%m-%d}T23:59:59"
+        one_year_ago = today - relativedelta(months=12)
+        start_date_recent = f"{one_year_ago:%Y-%m-%d}T00:00:00"
+        end_date_recent = f"{today:%Y-%m-%d}T23:59:59"
 
     results_dict: dict = {}
     LOGGER.info("** Available OPERA Products for Selected AOI **")
@@ -102,22 +112,28 @@ def find_print_available_opera_products(
                         gdf["BeginningDateTime"],
                     )
 
-                    # Extract unique acquisition dates
-                    gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
-                    unique_dates = gdf.sort_values(
-                        "BeginningDateTime", ascending=False
-                    )["AcqDate"].unique()
-                    selected_dates = unique_dates[:number_of_dates]
+                    # If a strict range was requested, we keep everything the API returned
+                    if is_range:
+                        pass 
+                    # Otherwise, apply the standard 'number_of_dates' slice
+                    else:
+                        # Extract unique acquisition dates
+                        gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
+                        unique_dates = gdf.sort_values(
+                            "BeginningDateTime", ascending=False
+                        )["AcqDate"].unique()
+                        selected_dates = unique_dates[:number_of_dates]
 
-                    # Keep all granules that match selected dates
-                    gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
+                        # Keep all granules that match selected dates
+                        gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
+                        gdf = gdf.drop(columns=["AcqDate"])
 
                     # Final formatting
                     gdf["BeginningDateTime"] = gdf["BeginningDateTime"].dt.strftime(
                         "%Y-%m-%dT%H:%M:%SZ",
                     )
                     results = [results[k] for k in gdf["original_index"]]
-                    gdf = gdf.drop(columns=["original_index", "AcqDate"])
+                    gdf = gdf.drop(columns=["original_index"])
                     LOGGER.info(
                         "-> Success: %s → %d granule(s) saved.", dataset, len(gdf)
                     )
