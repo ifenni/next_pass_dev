@@ -1,16 +1,16 @@
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import leafmap
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from pathlib import Path
 
 from utils.cloudiness import get_cloudiness
-from utils.utils import bbox_type, bbox_to_geometry
+from utils.utils import bbox_to_geometry, bbox_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,12 +71,23 @@ def find_print_available_opera_products(
     aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
 
     is_range = False
-    
+
     # Check if the user provided a strict date range
     if "/" in date_str:
-        start_str, end_str = date_str.split("/")
-        start_date_recent = f"{start_str}T00:00:00"
-        end_date_recent = f"{end_str}T23:59:59"
+        try:
+            start_str, end_str = date_str.split("/", 1)
+            start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+        except ValueError as e:
+            msg = "Invalid --event-date range. Use YYYY-MM-DD/YYYY-MM-DD."
+            raise ValueError(msg) from e
+
+        if start_date > end_date:
+            msg = "Invalid --event-date range: start date must be <= end date."
+            raise ValueError(msg)
+
+        start_date_recent = f"{start_date:%Y-%m-%d}T00:00:00"
+        end_date_recent = f"{end_date:%Y-%m-%d}T23:59:59"
         is_range = True
     else:
         # Standard Single Date Logic
@@ -114,7 +125,7 @@ def find_print_available_opera_products(
 
                     # If a strict range was requested, we keep everything the API returned
                     if is_range:
-                        pass 
+                        pass
                     # Otherwise, apply the standard 'number_of_dates' slice
                     else:
                         # Extract unique acquisition dates
