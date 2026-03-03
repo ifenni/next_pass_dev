@@ -80,7 +80,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--event-date",
         default="today",
         type=str,
-        help="Date (UTC) in format YYYY-MM-DD to consider for OPERA products",
+        help="Date (UTC) in format YYYY-MM-DD OR a date range YYYY-MM-DD/YYYY-MM-DD to consider for OPERA products",
     )
     parser.add_argument(
         "-p",
@@ -250,9 +250,9 @@ def run_next_pass(
     bbox : list[float]
         [south, north, west, east]
     number_of_dates : int
-        Number of recent dates to consider.
+        Number of recent dates to consider (Ignored if 'date' is a range).
     date : str or None
-        Optional date string (YYYY-MM-DD).
+        Optional date string (YYYY-MM-DD) OR range (YYYY-MM-DD/YYYY-MM-DD).
     functionality : str
         Functionality to run: 'overpasses', 'opera_search', or 'both'.
     """

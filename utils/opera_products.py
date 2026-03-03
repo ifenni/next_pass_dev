@@ -1,16 +1,16 @@
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import leafmap
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from pathlib import Path
 
 from utils.cloudiness import get_cloudiness
-from utils.utils import bbox_type, bbox_to_geometry
+from utils.utils import bbox_to_geometry, bbox_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,14 +70,35 @@ def find_print_available_opera_products(
 
     aoi_polygon, aoi, centroid = bbox_to_geometry(bbox_parsed, timestamp_dir)
 
-    if date_str == "today":
-        today = datetime.now(timezone.utc).date()
-    else:
-        today = datetime.strptime(date_str, "%Y-%m-%d").date()
+    is_range = False
 
-    one_year_ago = today - relativedelta(months=12)
-    start_date_recent = f"{one_year_ago:%Y-%m-%d}T00:00:00"
-    end_date_recent = f"{today:%Y-%m-%d}T23:59:59"
+    # Check if the user provided a strict date range
+    if "/" in date_str:
+        try:
+            start_str, end_str = date_str.split("/", 1)
+            start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+        except ValueError as e:
+            msg = "Invalid --event-date range. Use YYYY-MM-DD/YYYY-MM-DD."
+            raise ValueError(msg) from e
+
+        if start_date > end_date:
+            msg = "Invalid --event-date range: start date must be <= end date."
+            raise ValueError(msg)
+
+        start_date_recent = f"{start_date:%Y-%m-%d}T00:00:00"
+        end_date_recent = f"{end_date:%Y-%m-%d}T23:59:59"
+        is_range = True
+    else:
+        # Standard Single Date Logic
+        if date_str == "today":
+            today = datetime.now(timezone.utc).date()
+        else:
+            today = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+        one_year_ago = today - relativedelta(months=12)
+        start_date_recent = f"{one_year_ago:%Y-%m-%d}T00:00:00"
+        end_date_recent = f"{today:%Y-%m-%d}T23:59:59"
 
     results_dict: dict = {}
     LOGGER.info("** Available OPERA Products for Selected AOI **")
@@ -102,22 +123,28 @@ def find_print_available_opera_products(
                         gdf["BeginningDateTime"],
                     )
 
-                    # Extract unique acquisition dates
-                    gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
-                    unique_dates = gdf.sort_values(
-                        "BeginningDateTime", ascending=False
-                    )["AcqDate"].unique()
-                    selected_dates = unique_dates[:number_of_dates]
+                    # If a strict range was requested, we keep everything the API returned
+                    if is_range:
+                        pass
+                    # Otherwise, apply the standard 'number_of_dates' slice
+                    else:
+                        # Extract unique acquisition dates
+                        gdf["AcqDate"] = gdf["BeginningDateTime"].dt.date
+                        unique_dates = gdf.sort_values(
+                            "BeginningDateTime", ascending=False
+                        )["AcqDate"].unique()
+                        selected_dates = unique_dates[:number_of_dates]
 
-                    # Keep all granules that match selected dates
-                    gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
+                        # Keep all granules that match selected dates
+                        gdf = gdf[gdf["AcqDate"].isin(selected_dates)]
+                        gdf = gdf.drop(columns=["AcqDate"])
 
                     # Final formatting
                     gdf["BeginningDateTime"] = gdf["BeginningDateTime"].dt.strftime(
                         "%Y-%m-%dT%H:%M:%SZ",
                     )
                     results = [results[k] for k in gdf["original_index"]]
-                    gdf = gdf.drop(columns=["original_index", "AcqDate"])
+                    gdf = gdf.drop(columns=["original_index"])
                     LOGGER.info(
                         "-> Success: %s → %d granule(s) saved.", dataset, len(gdf)
                     )
