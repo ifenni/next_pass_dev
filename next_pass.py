@@ -400,6 +400,14 @@ def main(cli_args: Any = None):
         print("Alert emailed to recipients.")
         print("=========================================")
 
+    # Restore standard output and error
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
+    
+    # Ensure the log file is closed
+    if not log.closed:
+        log.close()
+
     return timestamp_dir
 
 
