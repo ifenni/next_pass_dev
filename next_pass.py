@@ -198,13 +198,15 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
 
 def format_arg(bbox_arg: Any) -> str:
     """Pretty-print bbox argument for logs/emails."""
+    if isinstance(bbox_arg, str):
+        return bbox_arg
     if (
         isinstance(bbox_arg, list)
         and all(isinstance(x, str) for x in bbox_arg)
         and len(bbox_arg) in (1, 2, 4)
     ):
         return " ".join(bbox_arg)
-    msg = "Argument must be a list of 1, 2, or 4 strings."
+    msg = "Argument must be a list of 1, 2, or 4 strings, or a single WKT/URL string."
     raise ValueError(msg)
 
 
@@ -236,7 +238,7 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
 
 
 def run_next_pass(
-    bbox: List[float],
+    bbox: List[float] | str,
     number_of_dates: int = 5,
     date: str | None = None,
     functionality: str = "both",
@@ -247,8 +249,12 @@ def run_next_pass(
 
     Args
     ----
-    bbox : list[float]
-        [south, north, west, east]
+    bbox :     
+        Options:
+            - list[float] - [south, north, west, east]
+            - WKT-format string (POLYGON) - "POLYGON ((-123.1 47.33, -123.16 47.28, -123.33 47.33, -123.25 47.34, -123.19 47.32, -123.15 47.35, -123.1 47.33))"
+            - Web link to geojson file - "https://example.com/AOI.geojson"
+            - Path to a .kml or .geojson location file - "/path/to/file.kml"
     number_of_dates : int
         Number of recent dates to consider (Ignored if 'date' is a range).
     date : str or None
@@ -256,9 +262,16 @@ def run_next_pass(
     functionality : str
         Functionality to run: 'overpasses', 'opera_search', or 'both'.
     """
+
+    # Ensure bbox is packaged such that argparse receives 1 token (string/URL) or 4 tokens (SNWE)
+    if isinstance(bbox, str):
+        bbox_list = [bbox]
+    else:
+        bbox_list = list(map(str, bbox))
+
     cli_args = [
         "-b",
-        *map(str, bbox),
+        *bbox_list,
         "-n",
         str(number_of_dates),
         "-f",
