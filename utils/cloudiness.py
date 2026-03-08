@@ -32,6 +32,14 @@ def chunks(seq, size):
         yield seq[i:i + size]
 
 
+def as_utc_datetime(dt_like: Union[str, datetime]) -> datetime:
+    """Normalize string/datetime input to a timezone-aware UTC datetime."""
+    dt = parse_datetime(dt_like) if isinstance(dt_like, str) else dt_like
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class RateLimiter:
     def __init__(self, rate_per_sec):
         self.lock = threading.Lock()
@@ -487,12 +495,8 @@ def get_overpass_cloudiness(
     """
     try:
         # Normalize datetime
-        if isinstance(target_datetime, str):
-            target_dt = parse_datetime(target_datetime)
-        else:
-            target_dt = target_datetime
-
-        target_iso = target_dt.strftime("%Y-%m-%dT%H:%M")
+        target_dt_utc = as_utc_datetime(target_datetime)
+        target_iso = target_dt_utc.strftime("%Y-%m-%dT%H:%M")
 
         # Prepare polygon and sample points
         poly = shape(polygon_geojson)
@@ -510,10 +514,7 @@ def get_overpass_cloudiness(
         global hit_api_limit 
         cloudiness_values: List[float] = []
 
-        date_format = "%Y-%m-%dT%H:%M"
-        target_f = datetime.strptime(target_iso, date_format)
-
-        is_future = (target_f > datetime.now())
+        is_future = target_dt_utc > datetime.now(timezone.utc)
         batch_func = (
             get_cloudiness_at_points
             if is_future
