@@ -441,7 +441,8 @@ def valid_drcs_datetime(s):
 
 def check_opera_overpass_intersection(product_label, product_geom,
                                       result_s1, result_s2,
-                                      result_l, event_date):
+                                      result_l, event_date,
+                                      dataset_name: str | None = None):
     """
     Check if a given product overlaps with any satellite overpass
     after the event date, and produce a formatted text report.
@@ -451,26 +452,30 @@ def check_opera_overpass_intersection(product_label, product_geom,
         product_geom (shapely Polygon): product intersection with the AOI
         result_s1, result_s2, result_l (dict): overpass info dicts
         event_date (datetime): the event datetime
+        dataset_name (str | None): OPERA dataset short name (optional)
 
     Returns:
         str: formatted report of past recent and future overlapping overpasses
     """
 
-    # first determine satellite
-    parts = product_label.split("_")
-    input_sat = parts[6]
+    # Determine satellite robustly from label tokens first, then dataset name.
+    label_tokens = {token.upper() for token in str(product_label).split("_") if token}
+    dataset_upper = (dataset_name or "").upper()
 
-    if "S1" in input_sat:
+    if "S1" in label_tokens or any(
+        key in dataset_upper for key in ("RTC-S1", "CSLC-S1", "DISP-S1", "DSWX-S1")
+    ):
         result = result_s1
         sat_name = "Sentinel-1"
-    elif "S2" in input_sat:
+    elif "S2" in label_tokens:
         result = result_s2
         sat_name = "Sentinel-2"
-    elif "L8" in input_sat or "L9" in input_sat:
+    elif "L8" in label_tokens or "L9" in label_tokens:
         result = result_l
         sat_name = "Landsat"
     else:
-        return f"Unknown satellite for product {product_label}"
+        dataset_hint = f" (dataset={dataset_name})" if dataset_name else ""
+        return f"Unknown satellite for product {product_label}{dataset_hint}"
 
     if not result:
         return f"No overpass results available for {sat_name}"
