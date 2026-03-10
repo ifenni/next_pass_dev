@@ -205,16 +205,23 @@ def next_sentinel_pass(
         LOGGER.warning("The collection plan does not contain a 'platform' column.")
 
     collects = find_intersecting_collects(gdf, geometry)
-    collects = collects.drop_duplicates(subset=["begin_date", "orbit_relative"])
+    dedupe_cols = ["begin_date", "orbit_relative"]
+    if "platform" in collects.columns:
+        dedupe_cols.append("platform")
+    collects = collects.drop_duplicates(subset=dedupe_cols)
 
     if "platform" not in gdf.columns:
         LOGGER.warning("The collection plan does not contain a 'platform' column.")
 
     if not collects.empty:
         if arg_cloudiness:
+            groupby_cols = ["orbit_relative"]
+            if "platform" in collects.columns and collects["platform"].notna().any():
+                groupby_cols.append("platform")
+
             # Group collects by orbit, aggregate timestamps as list
             collects_grouped = (
-                collects.groupby("orbit_relative", sort=False)
+                collects.groupby(groupby_cols, sort=False)
                 .agg(
                     {
                         "begin_date": list,
