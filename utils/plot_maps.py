@@ -321,6 +321,7 @@ def make_opera_granule_drcs_map(
                     result_s2,
                     result_l,
                     event_date,
+                    dataset_name=dataset,
                 )
                 color = "lightgray"
                 sentences_html = (
