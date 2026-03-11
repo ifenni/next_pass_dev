@@ -187,7 +187,7 @@ def describe_cloud_cover(cover_percent: float) -> str:
     )
 
 
-def export_opera_products(results_dict: dict, timestamp_dir, result_s1=None) -> None:
+def export_opera_products(results_dict: dict, timestamp_dir, result_s1=None, compute_cloudiness: bool = True) -> None:
     """
     Export OPERA products to an Excel file and log cloudiness summary.
 
@@ -198,7 +198,9 @@ def export_opera_products(results_dict: dict, timestamp_dir, result_s1=None) -> 
     timestamp_dir :
         Output directory (Path-like) where the Excel will be written.
     result_s1 :
-        Currently unused, kept for API compatibility.
+        Currently unused, kept for API compatibility.    
+    compute_cloudiness : bool
+        Whether to compute cloudiness from CLOUD layers. Set to False to skip and save time.
     """
     output_file = timestamp_dir / "opera_products_metadata.xlsx"
     wb = Workbook()
@@ -312,7 +314,7 @@ def export_opera_products(results_dict: dict, timestamp_dir, result_s1=None) -> 
             cloud_cover_percent: float | str = "N/A"
             area = 0.0
 
-            if cloud_layer_url and cloud_layer_url != "N/A":
+            if compute_cloudiness and cloud_layer_url and cloud_layer_url != "N/A":
                 result = get_cloudiness(cloud_layer_url)
                 if result is not None:
                     cloud_cover_percent, area = result
@@ -341,7 +343,7 @@ def export_opera_products(results_dict: dict, timestamp_dir, result_s1=None) -> 
                 ]
             )
 
-        if overall_area > 0:
+        if compute_cloudiness and overall_area > 0:
             overall_cloud_cover_percent = 100.0 * (overall_cloudy_area / overall_area)
             cover_description = describe_cloud_cover(overall_cloud_cover_percent)
 
