@@ -242,25 +242,11 @@ def run_next_pass(
     number_of_dates: int = 5,
     date: str | None = None,
     functionality: str = "both",
+    compute_cloudiness: bool = False,
 ):
     """
     Programmatic entry point for next_pass.
     Wraps main() and builds CLI-style args.
-
-    Args
-    ----
-    bbox :     
-        Options:
-            - list[float] - [south, north, west, east]
-            - WKT-format string (POLYGON) - "POLYGON ((-123.1 47.33, -123.16 47.28, -123.33 47.33, -123.25 47.34, -123.19 47.32, -123.15 47.35, -123.1 47.33))"
-            - Web link to geojson file - "https://example.com/AOI.geojson"
-            - Path to a .kml or .geojson location file - "/path/to/file.kml"
-    number_of_dates : int
-        Number of recent dates to consider (Ignored if 'date' is a range).
-    date : str or None
-        Optional date string (YYYY-MM-DD) OR range (YYYY-MM-DD/YYYY-MM-DD).
-    functionality : str
-        Functionality to run: 'overpasses', 'opera_search', or 'both'.
     """
 
     # Ensure bbox is packaged such that argparse receives 1 token (string/URL) or 4 tokens (SNWE)
@@ -268,6 +254,9 @@ def run_next_pass(
         bbox_list = [bbox]
     else:
         bbox_list = list(map(str, bbox))
+
+    if not compute_cloudiness:
+        print("[INFO] Skipping HLS cloud cover calculation and prediction.")
 
     cli_args = [
         "-b",
@@ -277,6 +266,10 @@ def run_next_pass(
         "-f",
         functionality,
     ]
+
+    # Only append the -c flag if compute_cloudiness is True
+    if compute_cloudiness:
+        cli_args.append("-c")
 
     if date:
         cli_args += ["-d", date]
@@ -363,7 +356,11 @@ def main(cli_args: Any = None):
             args.products,
             timestamp_dir
         )
-        export_opera_products(results_opera, timestamp_dir)
+        export_opera_products(
+            results_opera,
+            timestamp_dir,
+            compute_cloudiness=args.cloudiness
+        )
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
     # DRCS HTML map (requires both overpasses + OPERA)
