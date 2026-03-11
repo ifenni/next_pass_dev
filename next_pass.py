@@ -242,7 +242,7 @@ def run_next_pass(
     number_of_dates: int = 5,
     date: str | None = None,
     functionality: str = "both",
-    compute_cloudiness: bool = True,
+    compute_cloudiness: bool = False,
 ):
     """
     Programmatic entry point for next_pass.
@@ -258,7 +258,6 @@ def run_next_pass(
     if not compute_cloudiness:
         print("[INFO] Skipping HLS cloud cover calculation and prediction.")
 
-    print('using updated next_pass')
     cli_args = [
         "-b",
         *bbox_list,
