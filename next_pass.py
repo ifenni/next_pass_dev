@@ -51,7 +51,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-s",
         "--sat",
         default="all",
-        choices=["sentinel-1", "sentinel-2", "landsat", "all"],
+        choices=["sentinel-1", "sentinel-2", "landsat", "nisar", "all"],
         help="Satellite mission. Default is all.",
     )
     parser.add_argument(
@@ -127,6 +127,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     """Main logic for finding the next satellite overpasses."""
 
     from utils.landsat_pass import next_landsat_pass
+    from utils.nisar_pass import next_nisar_pass
     from utils.sentinel_pass import next_sentinel_pass
     from utils.utils import bbox_type, bbox_to_geometry
     from utils.cloudiness import api_limit_reached
@@ -157,6 +158,9 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
             "sentinel2", geometry, n_day_past, pred_cloudiness
         )
 
+        LOGGER.info("Fetching NISAR data...")
+        nisar = next_nisar_pass(geometry, n_day_past)
+
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
 
@@ -167,6 +171,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         )
         sentinel2 = []
         landsat = []
+        nisar = []
 
     elif args.sat == "sentinel-2":
         LOGGER.info("Fetching Sentinel-2 data...")
@@ -175,17 +180,26 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         )
         sentinel1 = []
         landsat = []
+        nisar = []
 
     elif args.sat == "landsat":
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
         sentinel1 = []
         sentinel2 = []
+        nisar = []
+
+    elif args.sat == "nisar":
+        LOGGER.info("Fetching NISAR data...")
+        nisar = next_nisar_pass(geometry, n_day_past)
+        sentinel1 = []
+        sentinel2 = []
+        landsat = []
 
     else:
         msg = (
             "Satellite not recognized. "
-            "Supported values: sentinel-1, sentinel-2, landsat, all."
+            "Supported values: sentinel-1, sentinel-2, landsat, nisar, all."
         )
         raise ValueError(msg)
 
@@ -193,6 +207,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         "sentinel-1": sentinel1,
         "sentinel-2": sentinel2,
         "landsat": landsat,
+        "nisar": nisar,
     }
 
 
@@ -318,7 +333,7 @@ def main(cli_args: Any = None):
     print(f"Log file created: {log_file}")
     print(f"BBox = {format_arg(args.bbox)}\n")
 
-    result_s1 = result_s2 = result_l = None
+    result_s1 = result_s2 = result_l = result_nisar = None
     results_opera = None
 
     # Overpasses functionality
@@ -327,11 +342,13 @@ def main(cli_args: Any = None):
         result_s1 = result["sentinel-1"]
         result_s2 = result["sentinel-2"]
         result_l = result["landsat"]
+        result_nisar = result["nisar"]
 
         make_overpasses_map(
             result_s1,
             result_s2,
             result_l,
+            result_nisar,
             args.bbox,
             timestamp_dir,
         )

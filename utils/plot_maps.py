@@ -413,6 +413,7 @@ def make_overpasses_map(
     result_s1: dict | None,
     result_s2: dict | None,
     result_l: dict | None,
+    result_nisar: dict | None,
     bbox: Any,
     timestamp_dir: Path,
 ):
@@ -425,6 +426,7 @@ def make_overpasses_map(
         "Sentinel-1": result_s1,
         "Sentinel-2": result_s2,
         "landsat": result_l,
+        "NISAR": result_nisar,
     }
 
     satellites: dict[str, tuple[str, list | None]] = {}

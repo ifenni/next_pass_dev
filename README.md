@@ -1,13 +1,13 @@
 # NEXT PASS
 
-Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, and **Landsat‑9**.  
+Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.  
 Optionally filter by **OPERA product families**, **estimate cloudiness** for the upcoming pass, and **email** results.
 
 ---
 
 ## Highlights
 
-- **Satellites**: Sentinel-1, Senteinel-2, Landsat-8, Landsat-9
+- **Satellites**: Sentinel-1, Sentinel-2, Landsat-8, Landsat-9, NISAR
 - **AOI inputs**: **Point** (lat, lon), **SNWE** bounding box, or **KML** polygon
 - **OPERA product filters**: limit search to product families (e.g., `DSWX-HLS_V1`, `DSWX-S1_V1`)
 - **Cloudiness prediction**: for next S1/S2 overpasses (`-c`)
@@ -110,6 +110,12 @@ next-pass -b AOI_from_url.geojson
 
   ```bash
   next-pass -b 50 52 -102 -100 -s sentinel-1 --email
+  ```
+
+- **NISAR** overpasses from the official NASA observation-plan KMZ:
+
+  ```bash
+  next-pass -b 34.15 34.25 -118.20 -118.15 -s nisar
   ```
 
 - **Restrict OPERA products** considered during the search (space‑separated list):
