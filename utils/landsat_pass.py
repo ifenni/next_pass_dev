@@ -20,6 +20,20 @@ MAP_SERVICE_URL = (
 JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/cycles_full.json"
 
 
+def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
+    """Wrap Landsat pass dates across multiple lines."""
+    date_format = "%m/%d/%Y"
+    formatted_dates = [
+        date_str
+        + (" (P)" if datetime.strptime(date_str, date_format) < datetime.now() else "")
+        for date_str in date_strings
+    ]
+    return "\n".join(
+        ", ".join(formatted_dates[i:i + per_line])
+        for i in range(0, len(formatted_dates), per_line)
+    )
+
+
 def shapely_to_esri_json(geometry: BaseGeometry) -> tuple[str, str]:
     """
     Convert a Shapely geometry to Esri JSON format and return geometryType.
@@ -227,8 +241,6 @@ def next_landsat_pass(
                 aggregated_data[key]["overlap_pct"] = 0.0
 
         row_data_with_keys = []
-        date_format = "%m/%d/%Y"
-
         for key, data in aggregated_data.items():
             direction, path, mission = key
             row_list = sorted(data["rows"])
@@ -237,26 +249,29 @@ def next_landsat_pass(
             overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
 
             if data["dates"]:
-                dates_str = ", ".join(
-                    date_str
-                    + (
-                        " (P)"
-                        if datetime.strptime(date_str, date_format) < datetime.now()
-                        else ""
-                    )
-                    for date_str in data["dates"]
-                )
+                dates_str = format_date_lines(data["dates"])
             else:
                 dates_str = "No future passes found."
 
             row_data = [direction, path, rows_str, mission, dates_str, overlap_str]
+            summary = "\n".join(
+                [
+                    f"Direction: {direction}",
+                    f"Path: {path}",
+                    f"Row: {rows_str}",
+                    f"Mission: {mission}",
+                    f"Passes UTC dates (P for past):\n{dates_str}",
+                    f"AOI % Overlap: {overlap_str}",
+                ]
+            )
 
             # Include key for geometry ordering
-            row_data_with_keys.append((overlap, row_data, key))
+            row_data_with_keys.append((overlap, row_data, key, summary))
 
         sorted_row_data = sorted(row_data_with_keys, key=lambda x: x[0], reverse=True)
-        table_data = [row for _, row, _ in sorted_row_data]
-        geometry_keys = [key for _, _, key in sorted_row_data]
+        table_data = [row for _, row, _, _ in sorted_row_data]
+        geometry_keys = [key for _, _, key, _ in sorted_row_data]
+        summaries = [summary for _, _, _, summary in sorted_row_data]
 
         geometry_data = []
         for key in geometry_keys:
@@ -279,6 +294,7 @@ def next_landsat_pass(
                 tablefmt="grid",
             ),
             "next_collect_geometry": geometry_data,
+            "next_collect_summary": summaries,
         }
 
     except Exception as error:  # noqa: BLE001

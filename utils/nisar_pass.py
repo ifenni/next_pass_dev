@@ -173,11 +173,16 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
 
     for index, row in gdf_sorted.iterrows():
         dates = row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
-        dates_str = ", ".join(
+        formatted_dates = [
             stamp.strftime("%Y-%m-%d")
             + (" (P)" if stamp < datetime.now(timezone.utc) else "")
             for stamp in dates
-        )
+        ]
+        date_lines = [
+            ", ".join(formatted_dates[i:i + 5])
+            for i in range(0, len(formatted_dates), 5)
+        ]
+        dates_str = "\n".join(date_lines)
 
         table.append(
             [
@@ -202,6 +207,37 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         ],
         tablefmt="grid",
     )
+
+
+def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
+    """Build per-row summaries for map popups without scraping the table."""
+    summaries: list[str] = []
+
+    for _, row in gdf.iterrows():
+        dates = row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
+        formatted_dates = [
+            stamp.strftime("%Y-%m-%d")
+            + (" (P)" if stamp < datetime.now(timezone.utc) else "")
+            for stamp in dates
+        ]
+        date_lines = [
+            ", ".join(formatted_dates[i:i + 5])
+            for i in range(0, len(formatted_dates), 5)
+        ]
+        summaries.append(
+            "\n".join(
+                [
+                    f"Direction: {row.pass_direction}",
+                    f"Track: {row.track}",
+                    f"Frame: {row.frame}",
+                    "Acquisition Date (P = past):",
+                    "\n".join(date_lines),
+                    f"AOI % Overlap: {row.intersection_pct:.2f}",
+                ]
+            )
+        )
+
+    return summaries
 
 
 def next_nisar_pass(geometry, n_day_past: float) -> dict:
@@ -266,5 +302,6 @@ def next_nisar_pass(geometry, n_day_past: float) -> dict:
     return {
         "next_collect_info": format_collects(grouped),
         "next_collect_geometry": grouped["geometry"].tolist(),
+        "next_collect_summary": build_collect_summaries(grouped),
         "intersection_pct": grouped["intersection_pct"].tolist(),
     }

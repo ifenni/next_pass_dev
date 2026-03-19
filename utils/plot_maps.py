@@ -452,9 +452,11 @@ def make_overpasses_map(
         if not geometry_list:
             continue
 
-        lines = info_text.split("\n")
-        cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
-        info_list = cleaned_info
+        info_list = satellite_results[sat_name].get("next_collect_summary")
+        if not info_list:
+            lines = info_text.split("\n")
+            cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
+            info_list = cleaned_info
         num_polygons = len(geometry_list)
 
         colors = hsl_distinct_colors_improved(num_polygons)
