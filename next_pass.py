@@ -398,6 +398,8 @@ def main(cli_args: Any = None):
 
         # Close log so everything is flushed, then read back
         log.close()
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
         with open(log_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
