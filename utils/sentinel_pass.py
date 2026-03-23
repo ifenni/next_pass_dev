@@ -16,6 +16,51 @@ SENT1_URL = "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-1/
 SENT2_URL = "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2/acquisition-plans"
 
 
+def format_date_lines(dates: list[datetime], per_line: int = 5) -> str:
+    """Wrap Sentinel acquisition dates across multiple lines."""
+    formatted_dates = [
+        d.strftime("%Y-%m-%d %H:%M:%S")
+        + (" (P)" if d < datetime.now(timezone.utc) else "")
+        for d in dates
+    ]
+    return "\n".join(
+        ", ".join(formatted_dates[i:i + per_line])
+        for i in range(0, len(formatted_dates), per_line)
+    )
+
+
+def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
+    """Build per-row summaries for map popups without scraping the table."""
+    summaries: list[str] = []
+    has_platform = (
+        "platform" in gdf.columns
+        and gdf["platform"].notnull().any()
+        and (gdf["platform"].astype(str) != "").any()
+    )
+    has_cloudiness = "cloudiness" in gdf.columns
+
+    for _, row in gdf.iterrows():
+        parts = []
+        if has_platform:
+            parts.append(f"Platform: {row.platform}")
+        parts.append(f"Relative Orbit: {row.orbit_relative}")
+        parts.append(f"Collection Date & UTC Time (P = past):\n{format_date_lines(row.begin_date)}")
+        parts.append(f"AOI % Overlap: {row.intersection_pct:.2f}")
+
+        if has_cloudiness:
+            if isinstance(row.cloudiness, list):
+                cloud_str = ", ".join(
+                    f"{v:.2f}" if v is not None else "N/A" for v in row.cloudiness
+                )
+            else:
+                cloud_str = f"{row.cloudiness:.2f}"
+            parts.append(f"Cloudiness (%): {cloud_str}")
+
+        summaries.append("\n".join(parts))
+
+    return summaries
+
+
 def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
     urls_a = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
@@ -72,11 +117,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         base_row.append(row.orbit_relative)
 
         # Dates
-        dates_str = ", ".join(
-            d.strftime("%Y-%m-%d %H:%M:%S")
-            + (" (P)" if d < datetime.now(timezone.utc) else "")
-            for d in row.begin_date
-        )
+        dates_str = format_date_lines(row.begin_date)
         base_row.append(dates_str)
 
         # Intersection %
@@ -249,6 +290,7 @@ def next_sentinel_pass(
             return {
                 "next_collect_info": format_collects(grouped),
                 "next_collect_geometry": grouped["geometry"].tolist(),
+                "next_collect_summary": build_collect_summaries(grouped),
                 "intersection_pct": grouped["intersection_pct"].tolist(),
                 "cloudiness": grouped["cloudiness"].tolist(),
             }
@@ -261,6 +303,7 @@ def next_sentinel_pass(
         return {
             "next_collect_info": format_collects(grouped),
             "next_collect_geometry": grouped["geometry"].tolist(),
+            "next_collect_summary": build_collect_summaries(grouped),
             "intersection_pct": grouped["intersection_pct"].tolist(),
         }
 

@@ -413,6 +413,7 @@ def make_overpasses_map(
     result_s1: dict | None,
     result_s2: dict | None,
     result_l: dict | None,
+    result_nisar: dict | None,
     bbox: Any,
     timestamp_dir: Path,
 ):
@@ -425,6 +426,7 @@ def make_overpasses_map(
         "Sentinel-1": result_s1,
         "Sentinel-2": result_s2,
         "landsat": result_l,
+        "NISAR": result_nisar,
     }
 
     satellites: dict[str, tuple[str, list | None]] = {}
@@ -450,9 +452,11 @@ def make_overpasses_map(
         if not geometry_list:
             continue
 
-        lines = info_text.split("\n")
-        cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
-        info_list = cleaned_info
+        info_list = satellite_results[sat_name].get("next_collect_summary")
+        if not info_list:
+            lines = info_text.split("\n")
+            cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
+            info_list = cleaned_info
         num_polygons = len(geometry_list)
 
         colors = hsl_distinct_colors_improved(num_polygons)
