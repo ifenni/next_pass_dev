@@ -1,6 +1,7 @@
 import json
 import logging
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import requests
@@ -17,15 +18,41 @@ logger = logging.getLogger(__name__)
 MAP_SERVICE_URL = (
     "https://nimbus.cr.usgs.gov/arcgis/rest/services/LLook_Outlines/MapServer/1/"
 )
-JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/cycles_full.json"
+LEGACY_CYCLES_FULL_URL = (
+    "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/"
+    "cycles_full.json"
+)
+CYCLE_REFERENCE_URL = (
+    "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/"
+    "cycles.json"
+)
+CYCLE_PATH_ROW_URL = (
+    "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/"
+    "cycle_path_row.json"
+)
+LANDSAT_MISSIONS = ("landsat_8", "landsat_9")
+DATE_FORMAT = "%m/%d/%Y"
+MAX_SCHEDULE_SEARCH_DAYS = 365
+UNIX_EPOCH = date(1970, 1, 1)
+
+
+@dataclass
+class LandsatScheduleSource:
+    """Normalized Landsat schedule inputs from modern or legacy USGS sources."""
+
+    source: str
+    warnings: list[str] = field(default_factory=list)
+    cycle_sequence: list[int] | None = None
+    mission_cycle_paths: dict[str, dict[int, set[int]]] | None = None
+    legacy_cycles: dict | None = None
+    latest_legacy_date: date | None = None
 
 
 def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
     """Wrap Landsat pass dates across multiple lines."""
-    date_format = "%m/%d/%Y"
     formatted_dates = [
         date_str
-        + (" (P)" if datetime.strptime(date_str, date_format) < datetime.now() else "")
+        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT) < datetime.now() else "")
         for date_str in date_strings
     ]
     return "\n".join(
@@ -56,6 +83,189 @@ def shapely_to_esri_json(geometry: BaseGeometry) -> tuple[str, str]:
 
     msg = "Unsupported geometry type. Only Point and Polygon are supported."
     raise ValueError(msg)
+
+
+def _fetch_json(url: str, session: requests.Session) -> dict:
+    """Fetch and decode a JSON document from USGS."""
+    response = session.get(url, timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def _build_cycle_sequence(cycle_reference_data: dict) -> list[int]:
+    """Map day offsets in the 16-day cycle to USGS cycle numbers."""
+    mission_data = cycle_reference_data.get("landsat_8")
+    if not isinstance(mission_data, dict):
+        msg = "Missing landsat_8 cycle reference data."
+        raise ValueError(msg)
+
+    cycle_sequence = []
+    for day_of_cycle in range(1, 17):
+        cycle_key = f"1/{day_of_cycle}/1970"
+        cycle_number = int(mission_data[cycle_key]["cycle"])
+        cycle_sequence.append(cycle_number)
+
+    if sorted(cycle_sequence) != list(range(1, 17)):
+        msg = "Unexpected cycle reference values from USGS."
+        raise ValueError(msg)
+
+    return cycle_sequence
+
+
+def _build_mission_cycle_paths(cycle_path_row_data: dict) -> dict[str, dict[int, set[int]]]:
+    """Reduce cycle path/row data to mission -> cycle -> available paths."""
+    mission_cycle_paths: dict[str, dict[int, set[int]]] = {}
+
+    for mission in LANDSAT_MISSIONS:
+        mission_data = cycle_path_row_data.get(mission)
+        if not isinstance(mission_data, dict):
+            msg = f"Missing {mission} cycle path/row data."
+            raise ValueError(msg)
+
+        mission_cycle_paths[mission] = {}
+        for cycle_str, entries in mission_data.items():
+            cycle_number = int(cycle_str)
+            mission_cycle_paths[mission][cycle_number] = {
+                int(entry["path"])
+                for entry in entries
+                if isinstance(entry, dict) and "path" in entry
+            }
+
+    return mission_cycle_paths
+
+
+def _latest_legacy_date(legacy_cycles: dict) -> date | None:
+    """Find the newest date exposed by the legacy cycles_full payload."""
+    latest_dates = []
+    for mission in LANDSAT_MISSIONS:
+        mission_data = legacy_cycles.get(mission, {})
+        if not isinstance(mission_data, dict):
+            continue
+        for date_str in mission_data:
+            latest_dates.append(datetime.strptime(date_str, DATE_FORMAT).date())
+
+    return max(latest_dates) if latest_dates else None
+
+
+def load_landsat_schedule_source(session: requests.Session) -> LandsatScheduleSource:
+    """Load Landsat schedule data, preferring current USGS path/row resources."""
+    try:
+        cycle_reference_data = _fetch_json(CYCLE_REFERENCE_URL, session)
+        cycle_path_row_data = _fetch_json(CYCLE_PATH_ROW_URL, session)
+        return LandsatScheduleSource(
+            source="modern",
+            cycle_sequence=_build_cycle_sequence(cycle_reference_data),
+            mission_cycle_paths=_build_mission_cycle_paths(cycle_path_row_data),
+        )
+    except (requests.RequestException, KeyError, TypeError, ValueError) as error:
+        logger.warning(
+            "Unable to load modern Landsat schedule inputs; falling back to "
+            "cycles_full.json: %s",
+            error,
+        )
+
+    warnings = [
+        (
+            "Using legacy Landsat schedule fallback because the current USGS "
+            "cycle mapping could not be loaded."
+        ),
+    ]
+
+    try:
+        legacy_cycles = _fetch_json(LEGACY_CYCLES_FULL_URL, session)
+    except requests.RequestException as error:
+        logger.error("Error fetching legacy Landsat cycles data: %s", error)
+        warnings.append("Landsat schedule data is temporarily unavailable.")
+        return LandsatScheduleSource(source="unavailable", warnings=warnings)
+
+    return LandsatScheduleSource(
+        source="legacy",
+        warnings=warnings,
+        legacy_cycles=legacy_cycles,
+        latest_legacy_date=_latest_legacy_date(legacy_cycles),
+    )
+
+
+def _cycle_for_date(target_date: date, cycle_sequence: list[int]) -> int:
+    """Resolve a date to the USGS 16-day cycle number."""
+    days_since_epoch = (target_date - UNIX_EPOCH).days
+    return cycle_sequence[days_since_epoch % len(cycle_sequence)]
+
+
+def _find_passes_with_modern_schedule(
+    path: int,
+    start_date: date,
+    num_passes: int,
+    schedule_source: LandsatScheduleSource,
+) -> dict[str, list[str]]:
+    """Compute Landsat 8/9 pass dates from cycle-day path mappings."""
+    next_passes = {mission: [] for mission in LANDSAT_MISSIONS}
+    cycle_sequence = schedule_source.cycle_sequence or []
+    mission_cycle_paths = schedule_source.mission_cycle_paths or {}
+
+    for mission in LANDSAT_MISSIONS:
+        mission_paths = mission_cycle_paths.get(mission, {})
+        for offset in range(MAX_SCHEDULE_SEARCH_DAYS + 1):
+            candidate_date = start_date + timedelta(days=offset)
+            cycle_number = _cycle_for_date(candidate_date, cycle_sequence)
+            if path in mission_paths.get(cycle_number, set()):
+                next_passes[mission].append(candidate_date.strftime(DATE_FORMAT))
+                if len(next_passes[mission]) >= num_passes:
+                    break
+
+    return next_passes
+
+
+def _find_passes_with_legacy_schedule(
+    path: int,
+    start_date: date,
+    num_passes: int,
+    schedule_source: LandsatScheduleSource,
+    today: date,
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Read pass dates from the legacy full-date payload, with stale fallback."""
+    next_passes = {mission: [] for mission in LANDSAT_MISSIONS}
+    warnings = list(schedule_source.warnings)
+    legacy_cycles = schedule_source.legacy_cycles or {}
+
+    latest_legacy_date = schedule_source.latest_legacy_date
+    if latest_legacy_date and latest_legacy_date < today:
+        warnings.append(
+            "USGS legacy Landsat schedule source is stale through "
+            f"{latest_legacy_date.strftime(DATE_FORMAT)}; showing the last "
+            "available matching dates."
+        )
+
+    for mission in LANDSAT_MISSIONS:
+        mission_data = legacy_cycles.get(mission, {})
+        if not isinstance(mission_data, dict):
+            logger.warning("Mission %s not found in legacy JSON data.", mission)
+            continue
+
+        matching_dates = []
+        in_window_dates = []
+        sorted_dates = sorted(
+            mission_data.items(),
+            key=lambda item: datetime.strptime(item[0], DATE_FORMAT),
+        )
+
+        for date_str, details in sorted_dates:
+            pass_date = datetime.strptime(date_str, DATE_FORMAT).date()
+            paths = details.get("path", "").split(",")
+
+            if str(path) not in paths:
+                continue
+
+            matching_dates.append(date_str)
+            if pass_date >= start_date:
+                in_window_dates.append(date_str)
+
+        if in_window_dates:
+            next_passes[mission] = in_window_dates[:num_passes]
+        elif latest_legacy_date and latest_legacy_date < today:
+            next_passes[mission] = matching_dates[-num_passes:]
+
+    return next_passes, warnings
 
 
 def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
@@ -127,51 +337,46 @@ def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
 def find_next_landsat_pass(
     path: int,
     n_day_past: float,
-    session: requests.Session,
+    schedule_source: LandsatScheduleSource,
     num_passes: int = 5,
-) -> dict:
+    today: date | None = None,
+) -> tuple[dict[str, list[str]], list[str]]:
     """
     Find the next Landsat-8 and Landsat-9 passes for a given path.
 
     Args:
         path (int): WRS-2 path number.
-        session (requests.Session): HTTP session object.
+        schedule_source (LandsatScheduleSource): Loaded USGS schedule data.
         num_passes (int): Number of future passes to find (default is 5).
+        today (date | None): Optional override for deterministic testing.
 
     Returns:
-        dict: Dictionary with next pass dates for each mission.
+        tuple: Next pass dates for each mission plus any schedule warnings.
     """
-    try:
-        response = session.get(JSON_URL, timeout=10)
-        response.raise_for_status()
-        cycles_data = response.json()
-    except requests.RequestException as error:
-        logger.error("Error fetching cycles data: %s", error)
-        return {"landsat_8": [], "landsat_9": []}
+    current_date = today or date.today()
+    start_date = current_date - timedelta(days=n_day_past)
 
-    next_passes = {"landsat_8": [], "landsat_9": []}
-    today = date.today()
-    n_days_earlier = today - timedelta(days=n_day_past)
-
-    for mission in next_passes:
-        if mission not in cycles_data:
-            logger.warning("Mission %s not found in JSON data.", mission)
-            continue
-
-        sorted_dates = sorted(
-            cycles_data[mission].items(),
-            key=lambda x: datetime.strptime(x[0], "%m/%d/%Y"),
+    if schedule_source.source == "modern":
+        return (
+            _find_passes_with_modern_schedule(
+                path,
+                start_date,
+                num_passes,
+                schedule_source,
+            ),
+            list(schedule_source.warnings),
         )
 
-        for date_str, details in sorted_dates:
-            pass_date = datetime.strptime(date_str, "%m/%d/%Y").date()
+    if schedule_source.source == "legacy":
+        return _find_passes_with_legacy_schedule(
+            path,
+            start_date,
+            num_passes,
+            schedule_source,
+            current_date,
+        )
 
-            if pass_date >= n_days_earlier and str(path) in details["path"].split(","):
-                next_passes[mission].append(date_str)
-                if len(next_passes[mission]) >= num_passes:
-                    break
-
-    return next_passes
+    return ({mission: [] for mission in LANDSAT_MISSIONS}, list(schedule_source.warnings))
 
 
 def next_landsat_pass(
@@ -198,8 +403,9 @@ def next_landsat_pass(
 
     try:
         results = ll2pr(geometryAOI, session=session)
+        schedule_source = load_landsat_schedule_source(session)
         aggregated_data = defaultdict(
-            lambda: {"rows": set(), "overlap_pct": 0.0, "dates": None}
+            lambda: {"rows": set(), "overlap_pct": 0.0, "dates": None, "warnings": []}
         )
         geometry_groups = defaultdict(list)
 
@@ -219,10 +425,10 @@ def next_landsat_pass(
                     else:
                         intersection_pct = 0.0
 
-                    next_pass_dates = find_next_landsat_pass(
+                    next_pass_dates, schedule_warnings = find_next_landsat_pass(
                         path,
                         n_day_past,
-                        session=session,
+                        schedule_source=schedule_source,
                         num_passes=5,
                     )
                     for mission, dates in next_pass_dates.items():
@@ -231,6 +437,8 @@ def next_landsat_pass(
                         aggregated_data[key]["overlap_pct"] += intersection_pct
                         if aggregated_data[key]["dates"] is None:
                             aggregated_data[key]["dates"] = dates
+                        if schedule_warnings:
+                            aggregated_data[key]["warnings"] = schedule_warnings
 
                         if polygon:
                             geometry_groups[key].append(polygon)
@@ -251,7 +459,13 @@ def next_landsat_pass(
             if data["dates"]:
                 dates_str = format_date_lines(data["dates"])
             else:
-                dates_str = "No future passes found."
+                dates_str = "No Landsat passes found."
+
+            if data["warnings"]:
+                warning_text = "\n".join(
+                    f"Warning: {warning}" for warning in data["warnings"]
+                )
+                dates_str = f"{dates_str}\n{warning_text}"
 
             row_data = [direction, path, rows_str, mission, dates_str, overlap_str]
             summary = "\n".join(
