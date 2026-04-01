@@ -155,9 +155,9 @@ def build_sentinel_collection(
 
     full_gdf = pd.concat(gdfs).drop_duplicates()
     full_gdf["begin_date"] = pd.to_datetime(full_gdf["begin_date"], utc=True)
+    full_gdf["end_date"] = pd.to_datetime(full_gdf["end_date"], utc=True)
     full_gdf = full_gdf.loc[full_gdf["begin_date"] >= n_days_earlier]
     full_gdf = full_gdf.sort_values("begin_date").reset_index(drop=True)
-
     try:
         full_gdf.to_file(out_path)
         logger.info("%s collection saved to: %s", mission_name, out_path)
