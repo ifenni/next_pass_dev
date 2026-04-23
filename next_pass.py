@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
+from utils.utils import format_satellite_arg
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -153,6 +154,13 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     landsat = []
     nisar = []
 
+    # for cloudiness waiting time
+    needs_weather_backoff = (
+            pred_cloudiness
+            and "sentinel-1" in selected
+            and "sentinel-2" in selected
+        )
+
     # Fetch conditionally
     if "sentinel-1" in selected:
         LOGGER.info("Fetching Sentinel-1 data...")
@@ -163,7 +171,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     if "sentinel-2" in selected:
         LOGGER.info("Fetching Sentinel-2 data...")
 
-        if pred_cloudiness and not api_limit_reached():
+        if needs_weather_backoff and not api_limit_reached():
             LOGGER.info(
                 "Waiting 1 min to avoid hitting cumulative weather API quota."
             )
@@ -385,8 +393,8 @@ def main(cli_args: Any = None):
         email_body = "".join(lines[4:]) if len(lines) > 4 else "".join(lines)
 
         subject = (
-            f"Next Satellite Overpasses for {args.sat.upper()} as of "
-            f"{timestamp} UTC for AOI: {format_arg(args.bbox)}"
+            f"Next Satellite Overpasses for {format_satellite_arg(args.sat)} "
+            f"as of {timestamp} UTC for AOI: {format_arg(args.bbox)}"
         )
         send_email(subject, email_body, overpasses_map)
 
@@ -397,7 +405,7 @@ def main(cli_args: Any = None):
     # Restore standard output and error
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
-    
+
     # Ensure the log file is closed
     if not log.closed:
         log.close()

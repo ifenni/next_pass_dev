@@ -629,3 +629,37 @@ def check_opera_overpass_intersection(product_label, product_geom,
             report_lines.append("No overlapping overpasses available.")
 
     return "\n".join(report_lines)
+
+
+def format_satellite_arg(sat_list):
+    """Formats satellite argument (list) into a readable string.
+
+    Handles:
+    - ["all"]
+    - ["sentinel-1"]
+    - ["sentinel-1", "landsat"]
+
+    Returns:
+        str: Human-readable satellite string
+    """
+    if isinstance(sat_list, str):
+        sat_list = [sat_list]
+
+    if "all" in sat_list:
+        sat_list = ["sentinel-1", "sentinel-2", "landsat", "nisar"]
+
+    # pretty names (for nicer output)
+    pretty_map = {
+        "sentinel-1": "Sentinel-1",
+        "sentinel-2": "Sentinel-2",
+        "landsat": "Landsat",
+        "nisar": "NISAR",
+    }
+
+    formatted = [pretty_map.get(s, s) for s in sat_list]
+    if len(formatted) == 1:
+        return formatted[0]
+    elif len(formatted) == 2:
+        return " and ".join(formatted)
+    else:
+        return ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
