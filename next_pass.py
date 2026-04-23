@@ -50,6 +50,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-s",
         "--sat",
+        nargs="+",
         default="all",
         choices=["sentinel-1", "sentinel-2", "landsat", "nisar", "all"],
         help="Satellite mission. Default is all.",
@@ -141,67 +142,44 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     lat_min = centroid.y
     lon_min = centroid.x
 
-    if args.sat == "all":
+    selected = args.sat
+
+    if "all" in selected:
+        selected = ["sentinel-1", "sentinel-2", "landsat", "nisar"]
+
+    # Initialize outputs
+    sentinel1 = []
+    sentinel2 = []
+    landsat = []
+    nisar = []
+
+    # Fetch conditionally
+    if "sentinel-1" in selected:
         LOGGER.info("Fetching Sentinel-1 data...")
         sentinel1 = next_sentinel_pass(
             "sentinel1", geometry, n_day_past, pred_cloudiness
         )
 
+    if "sentinel-2" in selected:
         LOGGER.info("Fetching Sentinel-2 data...")
 
         if pred_cloudiness and not api_limit_reached():
             LOGGER.info(
-                "Waiting 1 minute to avoid hitting"
-                " cumulative weather API quota...")
+                "Waiting 1 min to avoid hitting cumulative weather API quota."
+            )
             time.sleep(60)
+
         sentinel2 = next_sentinel_pass(
             "sentinel2", geometry, n_day_past, pred_cloudiness
         )
 
+    if "nisar" in selected:
         LOGGER.info("Fetching NISAR data...")
         nisar = next_nisar_pass(geometry, n_day_past)
 
+    if "landsat" in selected:
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
-
-    elif args.sat == "sentinel-1":
-        LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(
-            "sentinel1", geometry, n_day_past, pred_cloudiness
-        )
-        sentinel2 = []
-        landsat = []
-        nisar = []
-
-    elif args.sat == "sentinel-2":
-        LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(
-            "sentinel2", geometry, n_day_past, pred_cloudiness
-        )
-        sentinel1 = []
-        landsat = []
-        nisar = []
-
-    elif args.sat == "landsat":
-        LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
-        sentinel1 = []
-        sentinel2 = []
-        nisar = []
-
-    elif args.sat == "nisar":
-        LOGGER.info("Fetching NISAR data...")
-        nisar = next_nisar_pass(geometry, n_day_past)
-        sentinel1 = []
-        sentinel2 = []
-        landsat = []
-
-    else:
-        msg = (
-            "Satellite not recognized. "
-            "Supported values: sentinel-1, sentinel-2, landsat, nisar, all."
-        )
-        raise ValueError(msg)
 
     return {
         "sentinel-1": sentinel1,
