@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
+from utils.utils import format_satellite_arg
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -50,6 +51,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-s",
         "--sat",
+        nargs="+",
         default="all",
         choices=["sentinel-1", "sentinel-2", "landsat", "nisar", "all"],
         help="Satellite mission. Default is all.",
@@ -141,67 +143,51 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     lat_min = centroid.y
     lon_min = centroid.x
 
-    if args.sat == "all":
+    selected = args.sat
+
+    if "all" in selected:
+        selected = ["sentinel-1", "sentinel-2", "landsat", "nisar"]
+
+    # Initialize outputs
+    sentinel1 = []
+    sentinel2 = []
+    landsat = []
+    nisar = []
+
+    # for cloudiness waiting time
+    needs_weather_backoff = (
+            pred_cloudiness
+            and "sentinel-1" in selected
+            and "sentinel-2" in selected
+        )
+
+    # Fetch conditionally
+    if "sentinel-1" in selected:
         LOGGER.info("Fetching Sentinel-1 data...")
         sentinel1 = next_sentinel_pass(
             "sentinel1", geometry, n_day_past, pred_cloudiness
         )
 
+    if "sentinel-2" in selected:
         LOGGER.info("Fetching Sentinel-2 data...")
 
-        if pred_cloudiness and not api_limit_reached():
+        if needs_weather_backoff and not api_limit_reached():
             LOGGER.info(
-                "Waiting 1 minute to avoid hitting"
-                " cumulative weather API quota...")
+                "Waiting 1 min to avoid hitting cumulative weather API quota."
+            )
             time.sleep(60)
+
         sentinel2 = next_sentinel_pass(
             "sentinel2", geometry, n_day_past, pred_cloudiness
         )
 
+    if "nisar" in selected:
         LOGGER.info("Fetching NISAR data...")
         nisar = next_nisar_pass(geometry, n_day_past)
 
+    if "landsat" in selected:
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
-
-    elif args.sat == "sentinel-1":
-        LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(
-            "sentinel1", geometry, n_day_past, pred_cloudiness
-        )
-        sentinel2 = []
-        landsat = []
-        nisar = []
-
-    elif args.sat == "sentinel-2":
-        LOGGER.info("Fetching Sentinel-2 data...")
-        sentinel2 = next_sentinel_pass(
-            "sentinel2", geometry, n_day_past, pred_cloudiness
-        )
-        sentinel1 = []
-        landsat = []
-        nisar = []
-
-    elif args.sat == "landsat":
-        LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
-        sentinel1 = []
-        sentinel2 = []
-        nisar = []
-
-    elif args.sat == "nisar":
-        LOGGER.info("Fetching NISAR data...")
-        nisar = next_nisar_pass(geometry, n_day_past)
-        sentinel1 = []
-        sentinel2 = []
-        landsat = []
-
-    else:
-        msg = (
-            "Satellite not recognized. "
-            "Supported values: sentinel-1, sentinel-2, landsat, nisar, all."
-        )
-        raise ValueError(msg)
 
     return {
         "sentinel-1": sentinel1,
@@ -407,8 +393,8 @@ def main(cli_args: Any = None):
         email_body = "".join(lines[4:]) if len(lines) > 4 else "".join(lines)
 
         subject = (
-            f"Next Satellite Overpasses for {args.sat.upper()} as of "
-            f"{timestamp} UTC for AOI: {format_arg(args.bbox)}"
+            f"Next Satellite Overpasses for {format_satellite_arg(args.sat)} "
+            f"as of {timestamp} UTC for AOI: {format_arg(args.bbox)}"
         )
         send_email(subject, email_body, overpasses_map)
 
@@ -419,7 +405,7 @@ def main(cli_args: Any = None):
     # Restore standard output and error
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
-    
+
     # Ensure the log file is closed
     if not log.closed:
         log.close()
