@@ -515,6 +515,7 @@ def make_overpasses_map(
                 if isinstance(polygon, Polygon):
                     color = colors[i - 1]
                     geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
+                    info_html = info.replace("\n", "<br>") if isinstance(info, str) else str(info)
                     folium.GeoJson(
                         geojson_data,
                         name=f"{sat_name} Area {i}",
@@ -523,7 +524,7 @@ def make_overpasses_map(
                             "weight": 2,
                             "fillOpacity": 0.3,
                         },
-                        popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
+                        popup=folium.Popup(f"<b>{sat_name}</b><br>{info_html}", max_width=350),
                     ).add_to(fg)
             fg.add_to(map_object)
 
@@ -532,6 +533,29 @@ def make_overpasses_map(
         name="AOI",
         style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
+
+    # NOAA tide stations — collect from Sentinel results, deduplicate by ID
+    noaa_stations: dict = {}
+    for result in (result_s1, result_s2):
+        if result and result.get("noaa_stations"):
+            for st in result["noaa_stations"]:
+                noaa_stations[st["id"]] = st
+
+    if noaa_stations:
+        fg_tide = folium.FeatureGroup(name="NOAA Tide Stations")
+        for st in noaa_stations.values():
+            popup_html = (
+                f"<b>NOAA Station</b><br>"
+                f"ID: {st['id']}<br>"
+                f"Name: {st['name']}<br>"
+                f"Lat: {st['lat']:.4f}, Lon: {st['lng']:.4f}"
+            )
+            folium.Marker(
+                location=[st["lat"], st["lng"]],
+                popup=folium.Popup(popup_html, max_width=250),
+                icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
+            ).add_to(fg_tide)
+        fg_tide.add_to(map_object)
 
     folium.LayerControl(collapsed=False).add_to(map_object)
 
