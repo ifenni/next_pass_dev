@@ -204,6 +204,25 @@ def get_tide_info(
         return None
 
 
+def _find_tide_direction(times_iso: list, values: list, target_dt: datetime) -> str:
+    """Return 'rising' or 'falling' based on hourly values bracketing target_dt."""
+    before_val = before_t = None
+    after_val = after_t = None
+
+    for i, t_str in enumerate(times_iso):
+        t = parse_datetime(t_str)
+        if t <= target_dt:
+            if before_t is None or t > before_t:
+                before_t, before_val = t, values[i]
+        else:
+            if after_t is None or t < after_t:
+                after_t, after_val = t, values[i]
+
+    if before_val is not None and after_val is not None:
+        return "rising" if after_val > before_val else "falling"
+    return ""
+
+
 def _find_nearest_hilo_label(hilo_predictions: list, target_dt: datetime) -> str:
     """Return the type (H, HH, L, LL) of the hilo event nearest to target_dt."""
     if not hilo_predictions:
@@ -297,7 +316,9 @@ def get_tide_info_batch(
                         value = values[diffs.index(min(diffs))]
 
                     label = _find_nearest_hilo_label(hilo_predictions, target_dt)
-                    label_str = f"({label})" if label else ""
+                    direction = _find_tide_direction(times_iso, values, target_dt)
+                    tag = "-".join(filter(None, [label, direction]))
+                    label_str = f"({tag})" if tag else ""
                     formatted = f"{value:.2f}{label_str}"
 
                     per_station_results[i].append((station_id, formatted))
