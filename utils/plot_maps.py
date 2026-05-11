@@ -559,6 +559,38 @@ def make_overpasses_map(
 
     folium.LayerControl(collapsed=False).add_to(map_object)
 
+    class MultiPopup(MacroElement):
+        """One popup open per type (overpass / station), independent of each other."""
+        def __init__(self):
+            super().__init__()
+            self._template = Template("""
+                {% macro script(this, kwargs) %}
+                    L.Popup.prototype.options.autoClose = false;
+                    L.Popup.prototype.options.closeOnClick = false;
+                    var _lastStationPopup = null;
+                    var _lastOverpassPopup = null;
+                    var _map = {{ this._parent.get_name() }};
+
+                    _map.on('popupopen', function(e) {
+                        var source = e.layer || e.sourceTarget;
+                        var isMarker = source && source instanceof L.Marker;
+                        if (isMarker) {
+                            if (_lastStationPopup && _lastStationPopup !== e.popup) {
+                                _map.removeLayer(_lastStationPopup);
+                            }
+                            _lastStationPopup = e.popup;
+                        } else {
+                            if (_lastOverpassPopup && _lastOverpassPopup !== e.popup) {
+                                _map.removeLayer(_lastOverpassPopup);
+                            }
+                            _lastOverpassPopup = e.popup;
+                        }
+                    });
+                {% endmacro %}
+            """)
+
+    map_object.get_root().add_child(MultiPopup())
+
     map_object.save(output_file)
     LOGGER.info("-> Satellite overpasses map successfully saved to %s", output_file)
     return map_object
