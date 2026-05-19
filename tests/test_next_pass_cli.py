@@ -87,7 +87,7 @@ next_pass.datetime = FakeDateTime
 cloudiness.api_limit_reached = lambda: True
 utils_mod.bbox_type = lambda bbox: bbox
 utils_mod.bbox_to_geometry = fake_bbox_to_geometry
-sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness: {{
+sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: {{
     "next_collect_info": sat,
     "next_collect_geometry": [geometry],
     "next_collect_summary": [sat],
@@ -201,7 +201,7 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sentinel_pass,
         "next_sentinel_pass",
-        lambda sat, geometry, n_day_past, pred_cloudiness: sentinel_calls.append(
+        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: sentinel_calls.append(
             (sat, geometry.name, n_day_past, pred_cloudiness)
         ) or {"next_collect_info": sat},
     )

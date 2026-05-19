@@ -147,7 +147,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     n_day_past = args.look_back
 
     pred_cloudiness = bool(args.cloudiness)
-    pred_tide = bool(args.tide)
+    pred_tide = bool(getattr(args, "tide", False))
 
     geometry, aoi, centroid = bbox_to_geometry(bbox, timestamp_dir)
     lat_min = centroid.y

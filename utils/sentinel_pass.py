@@ -251,7 +251,7 @@ def next_sentinel_pass(
     geometry,
     n_day_past: float,
     arg_cloudiness: bool,
-    arg_tide: bool,
+    arg_tide: bool = False,
 ) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
@@ -261,6 +261,7 @@ def next_sentinel_pass(
         geometry: Shapely geometry (Point or Polygon) to check intersects.
         n_day_past: How many days back to include in collection.
         arg_cloudiness: Whether to compute cloudiness per overpass.
+        arg_tide: Whether to compute NOAA tide predictions per overpass.
 
     Returns:
         dict: Dictionary with formatted collect info, collect geometries,
@@ -344,7 +345,11 @@ def next_sentinel_pass(
                 get_tide_for_row,
                 axis=1,
             )
-            noaa_stations = get_stations_in_aoi(geometry)
+            try:
+                noaa_stations = get_stations_in_aoi(geometry)
+            except Exception as e:
+                LOGGER.warning("Could not retrieve NOAA station locations for map: %s", e)
+                noaa_stations = None
         return {
             "next_collect_info": format_collects(collects_grouped),
             "next_collect_geometry": collects_grouped["geometry"].tolist(),
@@ -357,9 +362,17 @@ def next_sentinel_pass(
         }
 
     if collects.empty:
+        end_date_msg = ""
+        if "end_date" in gdf.columns and not gdf.empty:
+            try:
+                max_date = gdf["end_date"].max()
+                end_date_msg = f" before {max_date.strftime('%Y-%m-%d')}"
+            except Exception:
+                pass
         return {
-            "next_collect_info": "No scheduled collects found.",
+            "next_collect_info": f"No scheduled collects{end_date_msg}.",
             "intersection_pct": None,
             "cloudiness": None,
             "tide": None,
+            "noaa_stations": None,
         }

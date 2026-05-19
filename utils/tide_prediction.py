@@ -13,6 +13,7 @@ LOGGER = logging.getLogger("tide_prediction")
 NOAA_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 STATIONS_URL = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json"
 _STATIONS_CACHE = None
+TIDE_DIRECTION_UNKNOWN = "slack"
 
 
 def get_stations(filepath="noaa_stations.json"):
@@ -73,31 +74,6 @@ def get_stations_in_aoi(polygon: BaseGeometry) -> list:
     return result
 
 
-def find_stations_in_polygon(polygon_geojson, stations):
-    """
-    polygon_geojson: GeoJSON polygon
-    stations: preloaded station list
-
-    Returns: list of station IDs
-    """
-
-    poly = polygon_geojson
-    selected = []
-
-    for st in stations:
-        lat = st.get("lat")
-        lon = st.get("lng")
-
-        if lat is None or lon is None:
-            continue
-
-        pt = Point(float(lon), float(lat))
-
-        if poly.contains(pt):
-            selected.append(st["id"])
-
-    return selected
-
 
 def interpolate_tide(times, values, target_dt):
     for i in range(len(times) - 1):
@@ -117,92 +93,6 @@ def interpolate_tide(times, values, target_dt):
     return None
 
 
-def get_tide_info(
-    polygon: BaseGeometry,
-    target_iso: str,
-    allow_interpolation: bool = True,
-    session: Optional[requests.Session] = None,
-) -> Optional[float]:
-
-    if session is None:
-        session = requests.Session()
-
-    try:
-        ensure_station_cache()
-        stations_data = get_stations()
-        stations = find_stations_in_polygon(polygon, stations_data)
-
-        if not stations:
-            LOGGER.warning("No stations in polygon")
-            return None
-
-        target_dt = parse_datetime(target_iso)
-
-        begin_date = (target_dt - timedelta(days=1)).strftime("%Y%m%d")
-        end_date = (target_dt + timedelta(days=1)).strftime("%Y%m%d")
-
-        tide_values = []
-
-        for station in stations:
-            params = {
-                "product": "predictions",
-                "application": "tide_app",
-                "begin_date": begin_date,
-                "end_date": end_date,
-                "datum": "MLLW",
-                "station": station,
-                "time_zone": "gmt",
-                "units": "metric",
-                "interval": "h",
-                "format": "json",
-            }
-
-            try:
-                response = session.get(NOAA_URL, params=params, timeout=10)
-                response.raise_for_status()
-
-                predictions = response.json().get("predictions", [])
-                if not predictions:
-                    continue
-
-                times_iso = [p["t"].replace(" ", "T") for p in predictions]
-                values = [float(p["v"]) for p in predictions]
-
-                # Exact match
-                if target_iso in times_iso:
-                    tide_values.append(values[times_iso.index(target_iso)])
-                    continue
-
-                # Interpolation
-                if allow_interpolation:
-                    interp_value = interpolate_tide(times_iso,
-                                                    values,
-                                                    target_dt)
-                    if interp_value is not None:
-                        tide_values.append(interp_value)
-                        continue
-
-                # Fallback: nearest
-                time_diffs = [
-                    abs((parse_datetime(t) - target_dt).total_seconds())
-                    for t in times_iso
-                ]
-                min_idx = time_diffs.index(min(time_diffs))
-                tide_values.append(values[min_idx])
-
-            except requests.RequestException:
-                continue
-
-        if not tide_values:
-            return None
-
-        # 🔥 Simple aggregation (mean)
-        return sum(tide_values) / len(tide_values)
-
-    except (requests.RequestException, KeyError, ValueError) as e:
-        LOGGER.error("Error retrieving tide data from NOAA: %s", e)
-        return None
-
 
 def _find_tide_direction(times_iso: list, values: list, target_dt: datetime) -> str:
     """Return 'rising' or 'falling' based on hourly values bracketing target_dt."""
@@ -219,7 +109,11 @@ def _find_tide_direction(times_iso: list, values: list, target_dt: datetime) -> 
                 after_t, after_val = t, values[i]
 
     if before_val is not None and after_val is not None:
-        return "rising" if after_val > before_val else "falling"
+        if after_val > before_val:
+            return "rising"
+        if after_val < before_val:
+            return "falling"
+        return TIDE_DIRECTION_UNKNOWN
     return ""
 
 
@@ -302,10 +196,12 @@ def get_tide_info_batch(
 
                 times_iso = [p["t"].replace(" ", "T") for p in predictions]
                 values = [float(p["v"]) for p in predictions]
+                times_iso_short = [t[:16] for t in times_iso]
 
                 for i, (target_iso, target_dt) in enumerate(zip(target_isos, target_dts)):
-                    if target_iso in times_iso:
-                        value = values[times_iso.index(target_iso)]
+                    target_iso_short = target_iso[:16]
+                    if target_iso_short in times_iso_short:
+                        value = values[times_iso_short.index(target_iso_short)]
                     elif allow_interpolation:
                         value = interpolate_tide(times_iso, values, target_dt)
                         if value is None:
@@ -339,7 +235,7 @@ def get_tide_info_batch(
 
         return results
 
-    except (requests.RequestException, KeyError, ValueError) as e:
+    except (requests.RequestException, KeyError, ValueError, OSError) as e:
         LOGGER.error("Error retrieving tide data from NOAA: %s", e)
         return [None] * len(target_isos)
 
@@ -357,8 +253,11 @@ def make_get_tide_for_row(aoi_geometry):
                 t = t.strftime("%Y-%m-%dT%H:%M:%S")
             target_isos.append(t)
 
-        intersection = row.geometry.intersection(aoi_geometry)
-        polygon = aoi_geometry if intersection.is_empty else intersection
+        if row.geometry is not None:
+            intersection = row.geometry.intersection(aoi_geometry)
+            polygon = aoi_geometry if intersection.is_empty else intersection
+        else:
+            polygon = aoi_geometry
 
         return get_tide_info_batch(
             polygon=polygon,
