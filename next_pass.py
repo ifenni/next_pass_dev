@@ -244,6 +244,8 @@ def run_next_pass(
     date: str | None = None,
     functionality: str = "both",
     compute_cloudiness: bool = False,
+    products: List[str] | None = None,
+    satellites: List[str] | None = None
 ):
     """
     Programmatic entry point for next_pass.
@@ -268,12 +270,19 @@ def run_next_pass(
         functionality,
     ]
 
-    # Only append the -c flag if compute_cloudiness is True
     if compute_cloudiness:
         cli_args.append("-c")
 
     if date:
         cli_args += ["-d", date]
+    
+    if products:
+        cli_args.append("-p")
+        cli_args.extend(products)
+
+    if satellites:
+        cli_args.append("-s")
+        cli_args.extend(satellites)
 
     return main(cli_args)
 
