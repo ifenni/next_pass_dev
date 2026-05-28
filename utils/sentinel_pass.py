@@ -314,7 +314,7 @@ def next_sentinel_pass(
                 {
                     "begin_date": list,
                     "geometry": "first",
-                    "intersection_pct": "mean",
+                    "intersection_pct": "first",
                 }
             )
             .reset_index()
