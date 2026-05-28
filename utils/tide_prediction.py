@@ -54,10 +54,12 @@ def parse_datetime(dt_str: str) -> datetime:
     return datetime.fromisoformat(dt_str.replace("Z", ""))
 
 
-def get_stations_in_aoi(polygon: BaseGeometry) -> list:
+def get_stations_in_aoi(polygon: BaseGeometry, max_stations: int = 3) -> list:
     """Return full station dicts (id, name, lat, lng) for stations inside the polygon.
 
-    For Point geometries, buffers by ~50km before searching.
+    For Point geometries, buffers by ~50km before searching. If no stations are found
+    within the AOI (point, small polygon, or sparse coverage), falls back to returning
+    the nearest max_stations to the AOI centroid.
     """
     ensure_station_cache()
     stations = get_stations()
@@ -78,6 +80,28 @@ def get_stations_in_aoi(polygon: BaseGeometry) -> list:
                 "lat": float(lat),
                 "lng": float(lon),
             })
+
+    # Fallback: if no stations in AOI, find nearest to centroid
+    if not result:
+        centroid = polygon.centroid
+        stations_with_dist = []
+        for st in stations:
+            lat = st.get("lat")
+            lon = st.get("lng")
+            if lat is None or lon is None:
+                continue
+            dist_sq = (float(lat) - centroid.y) ** 2 + (float(lon) - centroid.x) ** 2
+            stations_with_dist.append((dist_sq, st))
+
+        stations_with_dist.sort(key=lambda x: x[0])
+        for _, st in stations_with_dist[:max_stations]:
+            result.append({
+                "id": st["id"],
+                "name": st.get("name", st["id"]),
+                "lat": float(st["lat"]),
+                "lng": float(st["lng"]),
+            })
+
     return result
 
 

@@ -153,7 +153,7 @@ def test_next_sentinel_pass_returns_tide_for_point_aoi(monkeypatch):
     from tests.helpers import FakePoint
 
     monkeypatch.setattr(sentinel_pass, "create_s1_collection_plan", lambda n_day_past: "collection.geojson")
-    monkeypatch.setattr(sentinel_pass.gpd, "read_file", lambda path: FakeFrame([{}]))
+    monkeypatch.setattr(sentinel_pass.gpd, "read_file", lambda path: FakeFrame([{"platform": "S1A"}]))
     monkeypatch.setattr(
         sentinel_pass,
         "find_intersecting_collects",
