@@ -3,6 +3,7 @@ import os
 import time
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 from shapely.geometry import Point
@@ -14,40 +15,51 @@ NOAA_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 STATIONS_URL = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json"
 _STATIONS_CACHE = None
 TIDE_DIRECTION_UNKNOWN = "slack"
+SCRATCH_DIR = Path.cwd() / "scratch"
 
 
-def get_stations(filepath="noaa_stations.json"):
+def resolve_station_cache_path(filepath: str | Path | None = None) -> Path:
+    """Return the cache path for NOAA station metadata."""
+    return Path(filepath) if filepath is not None else SCRATCH_DIR / "noaa_stations.json"
+
+
+def get_stations(filepath: str | Path | None = None):
     global _STATIONS_CACHE
     if _STATIONS_CACHE is None:
         _STATIONS_CACHE = load_stations(filepath)
     return _STATIONS_CACHE
 
 
-def cache_stations(filepath="noaa_stations.json"):
+def cache_stations(filepath: str | Path | None = None):
     global _STATIONS_CACHE
+    cache_path = resolve_station_cache_path(filepath)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     response = requests.get(STATIONS_URL, timeout=10)
     response.raise_for_status()
 
-    with open(filepath, "w") as f:
+    with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(response.json(), f)
 
     _STATIONS_CACHE = None
 
 
-def load_stations(filepath="noaa_stations.json"):
-    with open(filepath, "r") as f:
+def load_stations(filepath: str | Path | None = None):
+    cache_path = resolve_station_cache_path(filepath)
+    with open(cache_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data.get("stations", [])
 
 
-def ensure_station_cache(filepath="noaa_stations.json", max_age_days=30):
-    if not os.path.exists(filepath):
-        cache_stations(filepath)
+def ensure_station_cache(filepath: str | Path | None = None, max_age_days=30):
+    cache_path = resolve_station_cache_path(filepath)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    if not cache_path.exists():
+        cache_stations(cache_path)
         return
 
-    age_days = (time.time() - os.path.getmtime(filepath)) / 86400
+    age_days = (time.time() - os.path.getmtime(cache_path)) / 86400
     if age_days > max_age_days:
-        cache_stations(filepath)
+        cache_stations(cache_path)
 
 
 def parse_datetime(dt_str: str) -> datetime:
