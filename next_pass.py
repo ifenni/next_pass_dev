@@ -254,6 +254,7 @@ def run_next_pass(
     date: str | None = None,
     functionality: str = "both",
     compute_cloudiness: bool = False,
+    compute_tide: bool = False,
 ):
     """
     Programmatic entry point for next_pass.
@@ -268,6 +269,8 @@ def run_next_pass(
 
     if not compute_cloudiness:
         print("[INFO] Skipping HLS cloud cover calculation and prediction.")
+    if not compute_tide:
+        print("[INFO] Skipping NOAA tide prediction.")
 
     cli_args = [
         "-b",
@@ -278,9 +281,10 @@ def run_next_pass(
         functionality,
     ]
 
-    # Only append the -c flag if compute_cloudiness is True
     if compute_cloudiness:
         cli_args.append("-c")
+    if compute_tide:
+        cli_args.append("-t")
 
     if date:
         cli_args += ["-d", date]

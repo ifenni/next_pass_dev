@@ -179,6 +179,34 @@ def test_run_next_pass_builds_cli_args(monkeypatch):
     ]
 
 
+def test_run_next_pass_wires_tide_flag(monkeypatch):
+    captured = {}
+
+    def fake_main(cli_args):
+        captured["cli_args"] = cli_args
+        return "ok"
+
+    monkeypatch.setattr(next_pass, "main", fake_main)
+
+    result = next_pass.run_next_pass(
+        bbox=[34.2, -118.17],
+        compute_tide=True,
+    )
+
+    assert result == "ok"
+    assert "-t" in captured["cli_args"]
+    assert captured["cli_args"] == [
+        "-b",
+        "34.2",
+        "-118.17",
+        "-n",
+        "5",
+        "-f",
+        "both",
+        "-t",
+    ]
+
+
 def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     sentinel_calls = []
     sleep_calls = []
