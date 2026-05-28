@@ -55,16 +55,23 @@ def parse_datetime(dt_str: str) -> datetime:
 
 
 def get_stations_in_aoi(polygon: BaseGeometry) -> list:
-    """Return full station dicts (id, name, lat, lng) for stations inside the polygon."""
+    """Return full station dicts (id, name, lat, lng) for stations inside the polygon.
+
+    For Point geometries, buffers by ~50km before searching.
+    """
     ensure_station_cache()
     stations = get_stations()
+
+    # Buffer point AOIs to ~50km radius (0.5 degrees latitude ≈ 55km)
+    search_geom = polygon.buffer(0.5) if polygon.geom_type == "Point" else polygon
+
     result = []
     for st in stations:
         lat = st.get("lat")
         lon = st.get("lng")
         if lat is None or lon is None:
             continue
-        if polygon.contains(Point(float(lon), float(lat))):
+        if search_geom.contains(Point(float(lon), float(lat))):
             result.append({
                 "id": st["id"],
                 "name": st.get("name", st["id"]),

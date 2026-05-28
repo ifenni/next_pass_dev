@@ -147,3 +147,39 @@ def test_next_sentinel_pass_returns_no_collect_message(monkeypatch):
 
     assert "No scheduled collects before 2026-03-30" in result["next_collect_info"]
 
+
+def test_next_sentinel_pass_returns_tide_for_point_aoi(monkeypatch):
+    """Regression test: --tide must work for point AOIs like -b 34.20 -118.17."""
+    from tests.helpers import FakePoint
+
+    monkeypatch.setattr(sentinel_pass, "create_s1_collection_plan", lambda n_day_past: "collection.geojson")
+    monkeypatch.setattr(sentinel_pass.gpd, "read_file", lambda path: FakeFrame([{}]))
+    monkeypatch.setattr(
+        sentinel_pass,
+        "find_intersecting_collects",
+        lambda gdf, geometry: FakeFrame(
+            [
+                {
+                    "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    "orbit_relative": 51,
+                    "geometry": FakePolygon("geom"),
+                    "intersection_pct": 40.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        sentinel_pass,
+        "make_get_tide_for_row",
+        lambda aoi_geometry: (lambda row: [{"nearest": "1.23(H-rising)", "per_station": {"9432780": "1.23(H-rising)"}}]),
+    )
+    monkeypatch.setattr(sentinel_pass, "format_collects", lambda grouped: "tide-table")
+    monkeypatch.setattr(sentinel_pass, "build_collect_summaries", lambda grouped: ["tide-summary"])
+    monkeypatch.setattr(sentinel_pass, "get_stations_in_aoi", lambda geom: [{"id": "9432780", "name": "LA", "lat": 34.0, "lng": -118.0}])
+
+    point_aoi = FakePoint(-118.17, 34.20)
+    result = sentinel_pass.next_sentinel_pass("sentinel1", point_aoi, 13, False, arg_tide=True)
+
+    assert result["tide"] == [[{"nearest": "1.23(H-rising)", "per_station": {"9432780": "1.23(H-rising)"}}]]
+    assert result["noaa_stations"] == [{"id": "9432780", "name": "LA", "lat": 34.0, "lng": -118.0}]
+
