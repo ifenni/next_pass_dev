@@ -3,11 +3,13 @@ import os
 import time
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import nearest_points
 
 LOGGER = logging.getLogger("tide_prediction")
 
@@ -16,6 +18,7 @@ STATIONS_URL = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations
 _STATIONS_CACHE = None
 TIDE_DIRECTION_UNKNOWN = "slack"
 SCRATCH_DIR = Path.cwd() / "scratch"
+MAX_NEARBY_STATION_DISTANCE_KM = 50.0
 
 
 def resolve_station_cache_path(filepath: str | Path | None = None) -> Path:
@@ -66,55 +69,87 @@ def parse_datetime(dt_str: str) -> datetime:
     return datetime.fromisoformat(dt_str.replace("Z", ""))
 
 
-def get_stations_in_aoi(polygon: BaseGeometry, max_stations: int = 3) -> list:
-    """Return full station dicts (id, name, lat, lng) for stations inside the polygon.
+def _build_station_record(station: dict) -> dict:
+    return {
+        "id": station["id"],
+        "name": station.get("name", station["id"]),
+        "lat": float(station["lat"]),
+        "lng": float(station["lng"]),
+    }
 
-    For Point geometries, buffers by ~50km before searching. If no stations are found
-    within the AOI (point, small polygon, or sparse coverage), falls back to returning
-    the nearest max_stations to the AOI centroid.
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_km = 6371.0
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+
+    sin_lat = math.sin(delta_lat / 2)
+    sin_lon = math.sin(delta_lon / 2)
+    a = (
+        sin_lat * sin_lat
+        + math.cos(lat1_rad) * math.cos(lat2_rad) * sin_lon * sin_lon
+    )
+    return 2 * earth_radius_km * math.asin(math.sqrt(a))
+
+
+def _station_distance_km_to_geometry(
+    geometry: BaseGeometry,
+    station_lat: float,
+    station_lon: float,
+) -> float:
+    station_point = Point(station_lon, station_lat)
+    nearest_geom_point, _ = nearest_points(geometry, station_point)
+    return _haversine_km(
+        nearest_geom_point.y,
+        nearest_geom_point.x,
+        station_lat,
+        station_lon,
+    )
+
+
+def get_stations_in_aoi(
+    polygon: BaseGeometry,
+    max_stations: int = 3,
+    max_distance_km: float = MAX_NEARBY_STATION_DISTANCE_KM,
+) -> list:
+    """Return relevant NOAA stations for the AOI.
+
+    For polygon AOIs, return stations inside the AOI. If none are inside,
+    fall back to the nearest stations within ``max_distance_km`` of the AOI.
+    For point AOIs, return up to ``max_stations`` nearest stations within
+    ``max_distance_km`` of the point.
     """
     ensure_station_cache()
     stations = get_stations()
 
-    # Buffer point AOIs to ~50km radius (0.5 degrees latitude ≈ 55km)
-    search_geom = polygon.buffer(0.5) if polygon.geom_type == "Point" else polygon
-
-    result = []
-    for st in stations:
-        lat = st.get("lat")
-        lon = st.get("lng")
-        if lat is None or lon is None:
-            continue
-        if search_geom.contains(Point(float(lon), float(lat))):
-            result.append({
-                "id": st["id"],
-                "name": st.get("name", st["id"]),
-                "lat": float(lat),
-                "lng": float(lon),
-            })
-
-    # Fallback: if no stations in AOI, find nearest to centroid
-    if not result:
-        centroid = polygon.centroid
-        stations_with_dist = []
+    if polygon.geom_type != "Point":
+        inside = []
         for st in stations:
             lat = st.get("lat")
             lon = st.get("lng")
             if lat is None or lon is None:
                 continue
-            dist_sq = (float(lat) - centroid.y) ** 2 + (float(lon) - centroid.x) ** 2
-            stations_with_dist.append((dist_sq, st))
+            if polygon.contains(Point(float(lon), float(lat))):
+                inside.append(_build_station_record(st))
+        if inside:
+            return inside
 
-        stations_with_dist.sort(key=lambda x: x[0])
-        for _, st in stations_with_dist[:max_stations]:
-            result.append({
-                "id": st["id"],
-                "name": st.get("name", st["id"]),
-                "lat": float(st["lat"]),
-                "lng": float(st["lng"]),
-            })
+    nearby = []
+    for st in stations:
+        lat = st.get("lat")
+        lon = st.get("lng")
+        if lat is None or lon is None:
+            continue
+        lat_f = float(lat)
+        lon_f = float(lon)
+        distance_km = _station_distance_km_to_geometry(polygon, lat_f, lon_f)
+        if distance_km <= max_distance_km:
+            nearby.append((distance_km, _build_station_record(st)))
 
-    return result
+    nearby.sort(key=lambda item: item[0])
+    return [station for _, station in nearby[:max_stations]]
 
 
 
