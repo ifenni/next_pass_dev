@@ -515,6 +515,7 @@ def make_overpasses_map(
                 if isinstance(polygon, Polygon):
                     color = colors[i - 1]
                     geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
+                    info_html = info.replace("\n", "<br>") if isinstance(info, str) else str(info)
                     folium.GeoJson(
                         geojson_data,
                         name=f"{sat_name} Area {i}",
@@ -523,7 +524,7 @@ def make_overpasses_map(
                             "weight": 2,
                             "fillOpacity": 0.3,
                         },
-                        popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
+                        popup=folium.Popup(f"<b>{sat_name}</b><br>{info_html}", max_width=350),
                     ).add_to(fg)
             fg.add_to(map_object)
 
@@ -533,7 +534,62 @@ def make_overpasses_map(
         style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
 
+    # NOAA tide stations — collect from Sentinel results, deduplicate by ID
+    noaa_stations: dict = {}
+    for result in (result_s1, result_s2):
+        if result and result.get("noaa_stations"):
+            for st in result["noaa_stations"]:
+                noaa_stations[st["id"]] = st
+
+    if noaa_stations:
+        fg_tide = folium.FeatureGroup(name="NOAA Tide Stations")
+        for st in noaa_stations.values():
+            popup_html = (
+                f"<b>NOAA Station</b><br>"
+                f"ID: {st['id']}<br>"
+                f"Name: {st['name']}<br>"
+                f"Lat: {st['lat']:.4f}, Lon: {st['lng']:.4f}"
+            )
+            folium.Marker(
+                location=[st["lat"], st["lng"]],
+                popup=folium.Popup(popup_html, max_width=250),
+                icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
+            ).add_to(fg_tide)
+        fg_tide.add_to(map_object)
+
     folium.LayerControl(collapsed=False).add_to(map_object)
+
+    class MultiPopup(MacroElement):
+        """One popup open per type (overpass / station), independent of each other."""
+        def __init__(self):
+            super().__init__()
+            self._template = Template("""
+                {% macro script(this, kwargs) %}
+                    L.Popup.prototype.options.autoClose = false;
+                    L.Popup.prototype.options.closeOnClick = false;
+                    var _lastStationPopup = null;
+                    var _lastOverpassPopup = null;
+                    var _map = {{ this._parent.get_name() }};
+
+                    _map.on('popupopen', function(e) {
+                        var source = e.layer || e.sourceTarget;
+                        var isMarker = source && source instanceof L.Marker;
+                        if (isMarker) {
+                            if (_lastStationPopup && _lastStationPopup !== e.popup) {
+                                _map.removeLayer(_lastStationPopup);
+                            }
+                            _lastStationPopup = e.popup;
+                        } else {
+                            if (_lastOverpassPopup && _lastOverpassPopup !== e.popup) {
+                                _map.removeLayer(_lastOverpassPopup);
+                            }
+                            _lastOverpassPopup = e.popup;
+                        }
+                    });
+                {% endmacro %}
+            """)
+
+    map_object.get_root().add_child(MultiPopup())
 
     map_object.save(output_file)
     LOGGER.info("-> Satellite overpasses map successfully saved to %s", output_file)

@@ -87,7 +87,7 @@ next_pass.datetime = FakeDateTime
 cloudiness.api_limit_reached = lambda: True
 utils_mod.bbox_type = lambda bbox: bbox
 utils_mod.bbox_to_geometry = fake_bbox_to_geometry
-sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness: {{
+sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: {{
     "next_collect_info": sat,
     "next_collect_geometry": [geometry],
     "next_collect_summary": [sat],
@@ -179,6 +179,34 @@ def test_run_next_pass_builds_cli_args(monkeypatch):
     ]
 
 
+def test_run_next_pass_wires_tide_flag(monkeypatch):
+    captured = {}
+
+    def fake_main(cli_args):
+        captured["cli_args"] = cli_args
+        return "ok"
+
+    monkeypatch.setattr(next_pass, "main", fake_main)
+
+    result = next_pass.run_next_pass(
+        bbox=[34.2, -118.17],
+        compute_tide=True,
+    )
+
+    assert result == "ok"
+    assert "-t" in captured["cli_args"]
+    assert captured["cli_args"] == [
+        "-b",
+        "34.2",
+        "-118.17",
+        "-n",
+        "5",
+        "-f",
+        "both",
+        "-t",
+    ]
+
+
 def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     sentinel_calls = []
     sleep_calls = []
@@ -201,7 +229,7 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sentinel_pass,
         "next_sentinel_pass",
-        lambda sat, geometry, n_day_past, pred_cloudiness: sentinel_calls.append(
+        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: sentinel_calls.append(
             (sat, geometry.name, n_day_past, pred_cloudiness)
         ) or {"next_collect_info": sat},
     )

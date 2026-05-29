@@ -101,6 +101,15 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "-t",
+        "--tide",
+        action="store_true",
+        help=(
+            "Display NOAA Tide Predictions for future and/or "
+            "past overpasses, respectively"
+        ),
+    )
+    parser.add_argument(
         "-l",
         "--log-level",
         default="info",
@@ -138,6 +147,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     n_day_past = args.look_back
 
     pred_cloudiness = bool(args.cloudiness)
+    pred_tide = bool(getattr(args, "tide", False))
 
     geometry, aoi, centroid = bbox_to_geometry(bbox, timestamp_dir)
     lat_min = centroid.y
@@ -165,7 +175,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     if "sentinel-1" in selected:
         LOGGER.info("Fetching Sentinel-1 data...")
         sentinel1 = next_sentinel_pass(
-            "sentinel1", geometry, n_day_past, pred_cloudiness
+            "sentinel1", geometry, n_day_past, pred_cloudiness, pred_tide
         )
 
     if "sentinel-2" in selected:
@@ -178,7 +188,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
             time.sleep(60)
 
         sentinel2 = next_sentinel_pass(
-            "sentinel2", geometry, n_day_past, pred_cloudiness
+            "sentinel2", geometry, n_day_past, pred_cloudiness, pred_tide
         )
 
     if "nisar" in selected:
@@ -244,6 +254,7 @@ def run_next_pass(
     date: str | None = None,
     functionality: str = "both",
     compute_cloudiness: bool = False,
+    compute_tide: bool = False,
     products: List[str] | str | None = None,
     satellites: List[str] | str | None = None
 ):
@@ -260,6 +271,8 @@ def run_next_pass(
 
     if not compute_cloudiness:
         print("[INFO] Skipping HLS cloud cover calculation and prediction.")
+    if not compute_tide:
+        print("[INFO] Skipping NOAA tide prediction.")
 
     cli_args = [
         "-b",
@@ -272,6 +285,8 @@ def run_next_pass(
 
     if compute_cloudiness:
         cli_args.append("-c")
+    if compute_tide:
+        cli_args.append("-t")
 
     if date:
         cli_args += ["-d", date]
