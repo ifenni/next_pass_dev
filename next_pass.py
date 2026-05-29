@@ -255,6 +255,8 @@ def run_next_pass(
     functionality: str = "both",
     compute_cloudiness: bool = False,
     compute_tide: bool = False,
+    products: List[str] | str | None = None,
+    satellites: List[str] | str | None = None
 ):
     """
     Programmatic entry point for next_pass.
@@ -288,6 +290,20 @@ def run_next_pass(
 
     if date:
         cli_args += ["-d", date]
+    
+    if products:
+        cli_args.append("-p")
+        if isinstance(products, str):
+            cli_args.extend([products])
+        else:
+            cli_args.extend(products)
+
+    if satellites:
+        cli_args.append("-s")
+        if isinstance(satellites, str):
+            cli_args.extend([satellites])
+        else:
+            cli_args.extend(satellites)
 
     return main(cli_args)
 
