@@ -171,7 +171,7 @@ def test_next_sentinel_pass_returns_tide_for_point_aoi(monkeypatch):
     monkeypatch.setattr(
         sentinel_pass,
         "make_get_tide_for_row",
-        lambda aoi_geometry: (lambda row: [{"nearest": "1.23(H-rising)", "per_station": {"9432780": "1.23(H-rising)"}}]),
+        lambda aoi_geometry, station_dicts: (lambda row: [{"nearest": "1.23(H-rising)", "per_station": {"9432780": "1.23(H-rising)"}}]),
     )
     monkeypatch.setattr(sentinel_pass, "format_collects", lambda grouped: "tide-table")
     monkeypatch.setattr(sentinel_pass, "build_collect_summaries", lambda grouped: ["tide-summary"])

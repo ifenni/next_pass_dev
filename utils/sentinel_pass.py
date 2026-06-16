@@ -336,20 +336,26 @@ def next_sentinel_pass(
         noaa_stations = None
         if arg_tide:
             collects_grouped["tide"] = None
-            LOGGER.info(
-                "Calculating tides for %d overpasses ...",
-                num_rows,
-            )
-            get_tide_for_row = make_get_tide_for_row(geometry)
-            collects_grouped["tide"] = collects_grouped.apply(
-                get_tide_for_row,
-                axis=1,
-            )
+            # Get stations once for the full AOI (used for all overpasses and map display)
             try:
                 noaa_stations = get_stations_in_aoi(geometry)
+                if not noaa_stations:
+                    LOGGER.warning("No NOAA stations found in AOI - tide predictions will be empty")
             except Exception as e:
-                LOGGER.warning("Could not retrieve NOAA station locations for map: %s", e)
+                LOGGER.warning("Could not retrieve NOAA stations for AOI: %s", e)
                 noaa_stations = None
+
+            if noaa_stations:
+                LOGGER.info(
+                    "Calculating tides for %d overpasses using %d stations ...",
+                    num_rows,
+                    len(noaa_stations),
+                )
+                get_tide_for_row = make_get_tide_for_row(geometry, noaa_stations)
+                collects_grouped["tide"] = collects_grouped.apply(
+                    get_tide_for_row,
+                    axis=1,
+                )
         return {
             "next_collect_info": format_collects(collects_grouped),
             "next_collect_geometry": collects_grouped["geometry"].tolist(),

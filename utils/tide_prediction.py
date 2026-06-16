@@ -152,7 +152,6 @@ def get_stations_in_aoi(
     return [station for _, station in nearby[:max_stations]]
 
 
-
 def interpolate_tide(times, values, target_dt):
     for i in range(len(times) - 1):
         t1 = parse_datetime(times[i])
@@ -213,19 +212,29 @@ def _find_nearest_hilo_label(hilo_predictions: list, target_dt: datetime) -> str
 def get_tide_info_batch(
     polygon: BaseGeometry,
     target_isos: list,
+    station_dicts: list,
     allow_interpolation: bool = True,
     session: Optional[requests.Session] = None,
 ) -> list:
-    """Return a dict per target time with 'nearest' (table) and 'per_station' (map) values."""
+    """Return a dict per target time with 'nearest' (table) and 'per_station' (map) values.
+
+    Args:
+        polygon: AOI geometry (used only for finding centroid to determine "nearest" station)
+        target_isos: List of ISO datetime strings for tide predictions
+        station_dicts: List of station dicts from get_stations_in_aoi()
+        allow_interpolation: Whether to interpolate tide values between hourly predictions
+        session: Optional requests.Session for connection pooling
+
+    Returns:
+        List of dicts with 'nearest' and 'per_station' tide data, or None for missing data
+    """
 
     if session is None:
         session = requests.Session()
 
     try:
-        station_dicts = get_stations_in_aoi(polygon)
-
         if not station_dicts:
-            LOGGER.warning("No stations in polygon")
+            LOGGER.warning("No stations provided")
             return [None] * len(target_isos)
 
         # Find nearest station to polygon centroid
@@ -318,7 +327,16 @@ def get_tide_info_batch(
         return [None] * len(target_isos)
 
 
-def make_get_tide_for_row(aoi_geometry):
+def make_get_tide_for_row(aoi_geometry, station_dicts):
+    """Create a function to get tide info for each overpass row.
+
+    Args:
+        aoi_geometry: Full AOI geometry (used for finding centroid)
+        station_dicts: List of station dicts from get_stations_in_aoi() - reused for all overpasses
+
+    Returns:
+        Function that takes a dataframe row and returns tide info
+    """
     def get_tide_for_row(row):
         times = row["begin_date"]
 
@@ -331,15 +349,10 @@ def make_get_tide_for_row(aoi_geometry):
                 t = t.strftime("%Y-%m-%dT%H:%M:%S")
             target_isos.append(t)
 
-        if row.geometry is not None:
-            intersection = row.geometry.intersection(aoi_geometry)
-            polygon = aoi_geometry if intersection.is_empty else intersection
-        else:
-            polygon = aoi_geometry
-
         return get_tide_info_batch(
-            polygon=polygon,
+            polygon=aoi_geometry,
             target_isos=target_isos,
+            station_dicts=station_dicts,
             allow_interpolation=True,
         )
 
