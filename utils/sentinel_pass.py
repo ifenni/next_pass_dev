@@ -91,9 +91,10 @@ def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
     urls_a = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
     urls_c = scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
-    urls = urls_a + urls_c
+    urls_d = scrape_esa_download_urls(SENT1_URL, "sentinel-1d")
+    urls = urls_a + urls_c + urls_d
 
-    platforms = ["S1A"] * len(urls_a) + ["S1C"] * len(urls_c)
+    platforms = ["S1A"] * len(urls_a) + ["S1C"] * len(urls_c) + ["S1D"] * len(urls_d)
 
     return build_sentinel_collection(
         urls,
@@ -194,7 +195,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
 def unique_geometry_per_orbit(collects: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Aggregate granules per orbit, keeping unique geometries and
-    separating S1A and S1C even if they share the same orbit.
+    separating S1A, S1C and S1D even if they share the same orbit.
     """
 
     def first_unique_geoms(geoms):
