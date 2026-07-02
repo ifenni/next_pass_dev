@@ -81,8 +81,10 @@ def download_kml(url: str, out_path: str = "collection.kml") -> Path:
 def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
     """Parse a single placemark from KML."""
     ns = ".//{http://www.opengis.net/kml/2.2}"
-    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text)
-    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text)
+    # Replace 'Z' with '+00:00' for Python 3.10 compatibility
+    # Sentinel KML files use ISO format with 'Z' suffix (e.g., "2026-06-28T18:03:59Z")
+    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text.replace("Z", "+00:00"))
+    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text.replace("Z", "+00:00"))
 
     data = placemark.find(f"{ns}ExtendedData")
     mode = data.find(f"{ns}Data[@name='Mode']/{ns}value").text

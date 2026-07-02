@@ -13,6 +13,7 @@ from shapely.geometry import Polygon
 from tabulate import tabulate
 
 from utils.utils import find_intersecting_collects
+from utils.tide_prediction import get_stations_in_aoi, make_get_tide_for_row
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +27,76 @@ COLLECTION_FILENAME = "nisar_collection.geojson"
 KML_NS = "{http://www.opengis.net/kml/2.2}"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TRACK_FRAME_RE = re.compile(r"^T(?P<track>\d+)_F(?P<frame>\d+)$", re.IGNORECASE)
+
+
+def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_direction: str) -> datetime:
+    """
+    Estimate NISAR overpass time based on orbital specifications.
+
+    NISAR is in a near-sun-synchronous orbit with nodal crossing times:
+    - Ascending node: 6:00 AM local solar time
+    - Descending node: 6:00 PM (18:00) local solar time
+
+    This function estimates the UTC overpass time for a given location based on
+    these specifications and the pass direction.
+
+    Args:
+        date_str: Date in format YYYY-MM-DD (e.g., "2026-06-28")
+        lat: Latitude of the location
+        lon: Longitude of the location (negative for Western hemisphere)
+        pass_direction: "Ascending" or "Descending"
+
+    Returns:
+        datetime: Estimated overpass time in UTC timezone
+
+    Notes:
+        - Based on NASA specification: nodal crossing at 6 AM (asc) / 6 PM (desc) local solar time
+        - Source: https://science.nasa.gov/mission/nisar/mission-overview/
+        - Accuracy: ±20-40 minutes (similar to Landsat estimation)
+        - Simplified calculation does not account for equation of time or orbital perturbations
+        - Uses local solar time approximation: LST ≈ UTC + (lon/15) hours
+
+    Example:
+        >>> estimate_nisar_overpass_time("2026-06-28", 34.0, -118.0, "Descending")
+        datetime(2026, 6, 28, 2, 0, 0, tzinfo=timezone.utc)
+        # Los Angeles: ~6:00 PM local = ~02:00 UTC (next day)
+    """
+    # Parse the date (YYYY-MM-DD format)
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+
+    # NISAR nodal crossing times (local solar time)
+    # Ascending: 6:00 AM = 06:00
+    # Descending: 6:00 PM = 18:00
+    if pass_direction == "Ascending":
+        local_solar_hour = 6.0
+    elif pass_direction == "Descending":
+        local_solar_hour = 18.0
+    else:
+        # Unknown direction - default to descending (most common for SAR)
+        LOGGER.warning(f"Unknown pass direction '{pass_direction}', assuming Descending")
+        local_solar_hour = 18.0
+
+    # Local Solar Time (LST) approximation:
+    # LST ≈ UTC + (longitude / 15) hours
+    # Rearranging: UTC ≈ LST - (longitude / 15)
+    local_solar_offset_hours = lon / 15.0
+    utc_hour = local_solar_hour - local_solar_offset_hours
+
+    # Normalize to 0-24 hour range
+    utc_hour = utc_hour % 24
+
+    # Extract hour, minute, and second components
+    hour = int(utc_hour)
+    minute = int((utc_hour % 1) * 60)
+    second = int(((utc_hour % 1) * 60 % 1) * 60)
+
+    # Create datetime with estimated time in UTC
+    return date_obj.replace(
+        hour=hour,
+        minute=minute,
+        second=second,
+        tzinfo=timezone.utc
+    )
 
 
 def download_nisar_plan(url: str, output_path: Path) -> Path:
@@ -169,79 +240,146 @@ def create_nisar_collection_plan() -> Path:
 def format_collects(gdf: gpd.GeoDataFrame) -> str:
     """Format NISAR collects for CLI output."""
     gdf_sorted = gdf.sort_values("intersection_pct", ascending=False).reset_index(drop=True)
+    has_tide = "tide" in gdf_sorted.columns
     table = []
 
     for index, row in gdf_sorted.iterrows():
         dates = row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
-        formatted_dates = [
-            stamp.strftime("%Y-%m-%d")
-            + (" (P)" if stamp < datetime.now(timezone.utc) else "")
-            for stamp in dates
-        ]
-        date_lines = [
-            ", ".join(formatted_dates[i:i + 5])
-            for i in range(0, len(formatted_dates), 5)
-        ]
-        dates_str = "\n".join(date_lines)
 
-        table.append(
-            [
-                index + 1,
-                row.pass_direction,
-                row.track,
-                row.frame,
-                dates_str,
-                f"{row.intersection_pct:.2f}",
+        # For NISAR, all dates in same track/direction have same time (local solar time)
+        # Show time in Direction column, dates only in separate column (more compact)
+        if dates:
+            first_time = dates[0].strftime("%H:%M")
+            direction_with_time = f"{row.pass_direction} (~{first_time} UTC)"
+            formatted_dates = [
+                stamp.strftime("%Y-%m-%d")
+                + (" (P)" if stamp < datetime.now(timezone.utc) else "")
+                for stamp in dates
             ]
-        )
+            date_lines = [
+                ", ".join(formatted_dates[i:i + 5])
+                for i in range(0, len(formatted_dates), 5)
+            ]
+            dates_str = "\n".join(date_lines)
+        else:
+            direction_with_time = row.pass_direction
+            dates_str = "N/A"
 
-    return tabulate(
-        table,
-        headers=[
-            "#",
-            "Direction",
-            "Track",
-            "Frame",
-            "Acquisition Date (P = past)",
-            "AOI % Overlap",
-        ],
-        tablefmt="grid",
-    )
+        base_row = [
+            index + 1,
+            direction_with_time,
+            row.track,
+            row.frame,
+            dates_str,
+            f"{row.intersection_pct:.2f}",
+        ]
+
+        # Add tide column if present - use "nearest" station only (same as Sentinel)
+        if has_tide:
+            if isinstance(row.tide, list):
+                tide_str = ", ".join(
+                    v["nearest"] if (isinstance(v, dict) and "nearest" in v) else "N/A"
+                    for v in row.tide
+                )
+            else:
+                tide_str = row.tide["nearest"] if (isinstance(row.tide, dict) and "nearest" in row.tide) else "N/A"
+            base_row.append(tide_str)
+
+        table.append(base_row)
+
+    headers = [
+        "#",
+        "Direction",
+        "Track",
+        "Frame",
+        "Acquisition Dates (P = past)",
+        "AOI % Overlap",
+    ]
+    if has_tide:
+        headers.append("Tide in m, MLLW (HH/H/LL/L)")
+
+    return tabulate(table, headers=headers, tablefmt="grid")
 
 
 def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
     """Build per-row summaries for map popups without scraping the table."""
     summaries: list[str] = []
+    has_tide = "tide" in gdf.columns
 
     for _, row in gdf.iterrows():
         dates = row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
-        formatted_dates = [
-            stamp.strftime("%Y-%m-%d")
-            + (" (P)" if stamp < datetime.now(timezone.utc) else "")
-            for stamp in dates
+
+        # For NISAR, all dates in same track/direction have same time
+        # Show time with direction, dates only in separate section
+        if dates:
+            first_time = dates[0].strftime("%H:%M")
+            formatted_dates = [
+                stamp.strftime("%Y-%m-%d")
+                + (" (P)" if stamp < datetime.now(timezone.utc) else "")
+                for stamp in dates
+            ]
+            date_display = ", ".join(formatted_dates)
+        else:
+            first_time = "N/A"
+            date_display = "N/A"
+
+        lines = [
+            f"Direction: {row.pass_direction} (~{first_time} UTC)",
+            f"Track: {row.track}",
+            f"Frame: {row.frame}",
+            f"Acquisition Dates (P = past):",
+            date_display,
+            f"AOI % Overlap: {row.intersection_pct:.2f}",
         ]
-        date_lines = [
-            ", ".join(formatted_dates[i:i + 5])
-            for i in range(0, len(formatted_dates), 5)
-        ]
-        summaries.append(
-            "\n".join(
-                [
-                    f"Direction: {row.pass_direction}",
-                    f"Track: {row.track}",
-                    f"Frame: {row.frame}",
-                    "Acquisition Date (P = past):",
-                    "\n".join(date_lines),
-                    f"AOI % Overlap: {row.intersection_pct:.2f}",
-                ]
-            )
-        )
+
+        # Add tide information if available
+        if has_tide and row.tide is not None:
+            if isinstance(row.tide, list):
+                tide_entries = row.tide
+                if tide_entries and any(t is not None for t in tide_entries):
+                    # Aggregate by station like Sentinel
+                    from collections import defaultdict
+                    by_station = defaultdict(list)
+                    for entry in tide_entries:
+                        if entry and isinstance(entry, dict) and "per_station" in entry:
+                            for station_id, tide_val in entry["per_station"].items():
+                                by_station[station_id].append(tide_val)
+
+                    if by_station:
+                        station_ids = list(by_station.keys())
+                        prefix_len = 0
+                        if len(station_ids) > 1:
+                            for chars in zip(*station_ids):
+                                if len(set(chars)) == 1:
+                                    prefix_len += 1
+                                else:
+                                    break
+                        tide_lines = [
+                            f"  {'*' * prefix_len}{station_id[prefix_len:]}: {', '.join(vals)}"
+                            for station_id, vals in by_station.items()
+                        ]
+                        lines.append("Tide in m, MLLW (H/L):")
+                        lines.extend(tide_lines)
+            elif isinstance(row.tide, dict):
+                tide_str = row.tide.get("nearest", "N/A")
+                lines.append(f"Tide in m, MLLW (H/L): {tide_str}")
+
+        summaries.append("\n".join(lines))
 
     return summaries
 
 
-def next_nisar_pass(geometry, n_day_past: float) -> dict:
-    """Return formatted NISAR overpasses intersecting the AOI."""
+def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict:
+    """Return formatted NISAR overpasses intersecting the AOI.
+
+    Args:
+        geometry: AOI geometry (Point or Polygon)
+        n_day_past: Number of days in the past to include
+        arg_tide: Whether to compute NOAA tide predictions per overpass
+
+    Returns:
+        Dict with overpass information, including tide predictions if requested
+    """
     try:
         collection_path = create_nisar_collection_plan()
         if not collection_path:
@@ -299,9 +437,76 @@ def next_nisar_pass(geometry, n_day_past: float) -> dict:
         drop=True
     )
 
+    # Estimate overpass times from dates using orbit parameters
+    # This replaces midnight UTC placeholders with estimated actual overpass times
+    centroid = geometry.centroid
+    lat, lon = centroid.y, centroid.x
+
+    def estimate_times_for_dates(row):
+        """Apply time estimation to each date in the row's begin_date list."""
+        dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+        pass_direction = row["pass_direction"]
+
+        estimated_times = []
+        for dt in dates:
+            # Convert datetime to date string for estimation
+            date_str = dt.strftime("%Y-%m-%d")
+            estimated_dt = estimate_nisar_overpass_time(date_str, lat, lon, pass_direction)
+            estimated_times.append(estimated_dt)
+
+        return estimated_times
+
+    # Apply time estimation to all rows
+    grouped["begin_date"] = grouped.apply(estimate_times_for_dates, axis=1)
+
+    # Tide prediction (if requested)
+    noaa_stations = None
+    if arg_tide:
+        grouped["tide"] = None
+        # Get stations once for the full AOI (used for all overpasses and map display)
+        try:
+            noaa_stations = get_stations_in_aoi(geometry)
+            if not noaa_stations:
+                LOGGER.warning("No NOAA stations found in AOI - tide predictions will be empty")
+        except Exception as e:
+            LOGGER.warning("Could not retrieve NOAA stations for AOI: %s", e)
+            noaa_stations = None
+
+        if noaa_stations:
+            LOGGER.info(
+                "Calculating tides for %d NISAR overpasses using %d stations ...",
+                len(grouped),
+                len(noaa_stations),
+            )
+            get_tide_for_row = make_get_tide_for_row(geometry, noaa_stations)
+            grouped["tide"] = grouped.apply(get_tide_for_row, axis=1)
+
+            # Filter dates within each row to only those within 2 months from now
+            max_future_date = datetime.now(timezone.utc) + timedelta(days=60)
+
+            def filter_dates_and_tides(row):
+                """Keep only dates and corresponding tides within 2 months."""
+                dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                tides = row["tide"] if isinstance(row["tide"], list) else [row["tide"]]
+
+                # Filter to valid dates
+                valid_pairs = [(d, t) for d, t in zip(dates, tides) if d <= max_future_date]
+
+                if valid_pairs:
+                    filtered_dates, filtered_tides = zip(*valid_pairs)
+                    row["begin_date"] = list(filtered_dates)
+                    row["tide"] = list(filtered_tides)
+                    return row
+                return None  # Drop row if no valid dates
+
+            grouped = grouped.apply(filter_dates_and_tides, axis=1)
+            grouped = grouped.dropna().reset_index(drop=True)
+
     return {
         "next_collect_info": format_collects(grouped),
         "next_collect_geometry": grouped["geometry"].tolist(),
         "next_collect_summary": build_collect_summaries(grouped),
         "intersection_pct": grouped["intersection_pct"].tolist(),
+        "tide": grouped["tide"].tolist() if arg_tide else None,
+        "noaa_stations": noaa_stations,
     }

@@ -11,6 +11,7 @@ from shapely.ops import unary_union
 from tabulate import tabulate
 
 from utils.utils import arcgis_to_polygon
+from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,66 @@ MAX_SCHEDULE_SEARCH_DAYS = 365
 UNIX_EPOCH = date(1970, 1, 1)
 
 
+def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> datetime:
+    """
+    Estimate Landsat overpass time based on USGS orbital specifications.
+
+    Landsat 8 & 9 cross the equator at 10:12 AM local solar time (±5 minutes)
+    on descending (daytime) passes. This function estimates the UTC overpass
+    time for a given location based on this specification.
+
+    Args:
+        date_str: Date in format MM/DD/YYYY (e.g., "06/28/2026")
+        lat: Latitude of the location
+        lon: Longitude of the location (negative for Western hemisphere)
+
+    Returns:
+        datetime: Estimated overpass time in UTC timezone
+
+    Notes:
+        - Based on USGS specification: equatorial crossing at 10:12 AM local time
+        - Source: https://www.usgs.gov/landsat-missions/landsat-8
+        - Accuracy: ±15-20 minutes near equator, ±20-40 minutes at higher latitudes
+        - Simplified calculation does not account for equation of time or orbital perturbations
+        - Uses local solar time approximation: LST ≈ UTC + (lon/15) hours
+
+    Example:
+        >>> estimate_landsat_overpass_time("06/28/2026", 34.0, -118.0)
+        datetime(2026, 6, 28, 18, 0, 48, tzinfo=timezone.utc)
+        # Los Angeles: ~10:12 AM local = ~18:00 UTC
+    """
+    from datetime import timezone
+
+    # Parse the date (MM/DD/YYYY format)
+    date_obj = datetime.strptime(date_str, DATE_FORMAT)
+
+    # Landsat equatorial crossing time: 10:12 AM local solar time
+    # Convert to decimal hours: 10 + 12/60 = 10.2 hours
+    local_solar_hour = 10.2
+
+    # Local Solar Time (LST) approximation:
+    # LST ≈ UTC + (longitude / 15) hours
+    # Rearranging: UTC ≈ LST - (longitude / 15)
+    local_solar_offset_hours = lon / 15.0
+    utc_hour = local_solar_hour - local_solar_offset_hours
+
+    # Normalize to 0-24 hour range
+    utc_hour = utc_hour % 24
+
+    # Extract hour and minute components
+    hour = int(utc_hour)
+    minute = int((utc_hour % 1) * 60)
+    second = int(((utc_hour % 1) * 60 % 1) * 60)
+
+    # Create datetime with estimated time in UTC
+    return date_obj.replace(
+        hour=hour,
+        minute=minute,
+        second=second,
+        tzinfo=timezone.utc
+    )
+
+
 @dataclass
 class LandsatScheduleSource:
     """Normalized Landsat schedule inputs from modern or legacy USGS sources."""
@@ -50,9 +111,11 @@ class LandsatScheduleSource:
 
 def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
     """Wrap Landsat pass dates across multiple lines."""
+    from datetime import timezone
+
     formatted_dates = [
         date_str
-        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT) < datetime.now() else "")
+        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) else "")
         for date_str in date_strings
     ]
     return "\n".join(
@@ -384,6 +447,7 @@ def next_landsat_pass(
     lon: float,
     geometryAOI,
     n_day_past: float,
+    arg_tide: bool = False,
 ) -> dict | None:
     """
     Retrieve and format the next Landsat passes for a given location.
@@ -394,6 +458,7 @@ def next_landsat_pass(
         geometryAOI: Geometry of the area of interest used for computing
             intersection percentage.
         n_day_past (float): Number of days in the past to search cycles JSON.
+        arg_tide (bool): Whether to compute NOAA tide predictions per overpass.
 
     Returns:
         dict or None: Dictionary containing next Landsat passes information
@@ -448,7 +513,86 @@ def next_landsat_pass(
                 aggregated_data[key]["dates"] = []
                 aggregated_data[key]["overlap_pct"] = 0.0
 
+        # Tide prediction (if requested)
+        noaa_stations = None
+        tide_data_by_key = {}
+        if arg_tide:
+            try:
+                noaa_stations = get_stations_in_aoi(geometryAOI)
+                if not noaa_stations:
+                    logger.warning(
+                        "No NOAA stations found in AOI - "
+                        "tide predictions will be empty"
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Could not retrieve NOAA stations for AOI: %s", e
+                )
+                noaa_stations = None
+
+            if noaa_stations:
+                logger.info(
+                    "Calculating tides for Landsat overpasses using %d "
+                    "stations ...",
+                    len(noaa_stations),
+                )
+                # Calculate tides for each aggregated entry
+                for key, data in aggregated_data.items():
+                    if data["dates"]:
+                        # Convert date strings to estimated datetime objects
+                        estimated_datetimes = [
+                            estimate_landsat_overpass_time(
+                                date_str, lat, lon
+                            )
+                            for date_str in data["dates"]
+                        ]
+                        # Convert to naive ISO strings (timezone stripped intentionally)
+                        # NOAA API is configured for GMT in tide_prediction.py, so all times are UTC
+                        target_isos = [
+                            dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            for dt in estimated_datetimes
+                        ]
+
+                        # Get tide info for these times
+                        tide_results = get_tide_info_batch(
+                            polygon=geometryAOI,
+                            target_isos=target_isos,
+                            station_dicts=noaa_stations,
+                            allow_interpolation=True,
+                        )
+                        tide_data_by_key[key] = tide_results
+                    else:
+                        tide_data_by_key[key] = []
+
+        # Filter: only show rows with at least one date within 2 months if tide is requested
+        if arg_tide:
+            from datetime import datetime, timedelta
+            max_future_date = datetime.now().date() + timedelta(days=60)
+
+            # Filter dates within each key's data
+            filtered_aggregated_data = {}
+            for key, data in aggregated_data.items():
+                if data["dates"]:
+                    # Filter dates to only those within 2 months, keeping tide predictions in sync
+                    tide_results = tide_data_by_key.get(key, [])
+                    valid_pairs = [
+                        (d, tide_results[i] if i < len(tide_results) else None)
+                        for i, d in enumerate(data["dates"])
+                        if datetime.strptime(d, DATE_FORMAT).date() <= max_future_date
+                    ]
+                    # Only include this row if it has at least one valid date
+                    if valid_pairs:
+                        valid_dates = [d for d, _ in valid_pairs]
+                        filtered_data = data.copy()
+                        filtered_data["dates"] = valid_dates
+                        filtered_aggregated_data[key] = filtered_data
+                        tide_data_by_key[key] = [t for _, t in valid_pairs]
+                else:
+                    filtered_aggregated_data[key] = data
+            aggregated_data = filtered_aggregated_data
+
         row_data_with_keys = []
+        header_time_str = ""
         for key, data in aggregated_data.items():
             direction, path, mission = key
             row_list = sorted(data["rows"])
@@ -456,8 +600,19 @@ def next_landsat_pass(
             overlap = data["overlap_pct"]
             overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
 
+            # Estimate overpass time (consistent for all dates at this location)
+            estimated_time_str = ""
             if data["dates"]:
-                dates_str = format_date_lines(data["dates"])
+                # Estimate time from first date (time is same for all passes at this location)
+                first_date = data["dates"][0]
+                estimated_dt = estimate_landsat_overpass_time(first_date, lat, lon)
+                estimated_time_str = f" at ~{estimated_dt.strftime('%H:%M')} UTC"
+                if not header_time_str:
+                    header_time_str = estimated_time_str
+
+                # Format dates with time header (like the popup format)
+                formatted_dates = format_date_lines(data["dates"])
+                dates_str = formatted_dates
             else:
                 dates_str = "No Landsat passes found."
 
@@ -467,17 +622,62 @@ def next_landsat_pass(
                 )
                 dates_str = f"{dates_str}\n{warning_text}"
 
-            row_data = [direction, path, rows_str, mission, dates_str, overlap_str]
-            summary = "\n".join(
-                [
-                    f"Direction: {direction}",
-                    f"Path: {path}",
-                    f"Row: {rows_str}",
-                    f"Mission: {mission}",
-                    f"Passes UTC dates (P for past):\n{dates_str}",
-                    f"AOI % Overlap: {overlap_str}",
-                ]
-            )
+            # Tide data (if available) - use "nearest" station only (same as Sentinel)
+            tide_str = "N/A"
+            if arg_tide and key in tide_data_by_key:
+                tide_results = tide_data_by_key[key]
+                if tide_results:
+                    # Extract "nearest" field from each result (same as Sentinel)
+                    tide_values = [
+                        result["nearest"] if (isinstance(result, dict) and "nearest" in result) else "N/A"
+                        for result in tide_results
+                    ]
+                    tide_str = ", ".join(tide_values)
+
+            row_data = [
+                direction,
+                path,
+                rows_str,
+                mission,
+                dates_str,
+                overlap_str,
+            ]
+            if arg_tide:
+                row_data.append(tide_str)
+
+            summary_parts = [
+                f"Direction: {direction}",
+                f"Path: {path}",
+                f"Row: {rows_str}",
+                f"Mission: {mission}",
+                f"Passes dates{estimated_time_str} (P for past):\n{dates_str}",
+                f"AOI % Overlap: {overlap_str}",
+            ]
+            if arg_tide:
+                tide_lines = "N/A"
+                if key in tide_data_by_key and tide_data_by_key[key]:
+                    by_station: dict = {}
+                    for result in tide_data_by_key[key]:
+                        if isinstance(result, dict) and "per_station" in result:
+                            for sid, val in result["per_station"].items():
+                                by_station.setdefault(sid, []).append(val)
+                    if by_station:
+                        station_ids = list(by_station.keys())
+                        prefix_len = 0
+                        if len(station_ids) > 1:
+                            for chars in zip(*station_ids):
+                                if len(set(chars)) == 1:
+                                    prefix_len += 1
+                                else:
+                                    break
+                        tide_lines = "\n".join(
+                            f"{'*' * prefix_len}{sid[prefix_len:]}: {', '.join(vals)}"
+                            for sid, vals in by_station.items()
+                        )
+                summary_parts.append(
+                    f"Tide in m, MLLW (High/Low):\n{tide_lines}"
+                )
+            summary = "\n".join(summary_parts)
 
             # Include key for geometry ordering
             row_data_with_keys.append((overlap, row_data, key, summary))
@@ -494,21 +694,26 @@ def next_landsat_pass(
                 merged = unary_union(polygons)
                 geometry_data.append(merged)
 
+        headers = [
+            "Direction",
+            "Path",
+            "Row",
+            "Mission",
+            f"Acquisition Dates{header_time_str} (P for past)",
+            "AOI % Overlap",
+        ]
+        if arg_tide:
+            headers.append("Tide in m, MLLW (HH/H/LL/L)")
+
         return {
             "next_collect_info": tabulate(
                 table_data,
-                headers=[
-                    "Direction",
-                    "Path",
-                    "Row",
-                    "Mission",
-                    "Passes UTC dates (P for past)",
-                    "AOI % Overlap",
-                ],
+                headers=headers,
                 tablefmt="grid",
             ),
             "next_collect_geometry": geometry_data,
             "next_collect_summary": summaries,
+            "noaa_stations": noaa_stations if arg_tide else None,
         }
 
     except Exception as error:  # noqa: BLE001

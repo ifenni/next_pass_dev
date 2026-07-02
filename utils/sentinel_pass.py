@@ -168,11 +168,11 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         if has_tide:
             if isinstance(row.tide, list):
                 tide_str = ", ".join(
-                    v["nearest"] if isinstance(v, dict) else (v if v is not None else "N/A")
+                    v["nearest"] if (isinstance(v, dict) and "nearest" in v) else "N/A"
                     for v in row.tide
                 )
             else:
-                tide_str = row.tide["nearest"] if isinstance(row.tide, dict) else (row.tide if row.tide is not None else "N/A")
+                tide_str = row.tide["nearest"] if (isinstance(row.tide, dict) and "nearest" in row.tide) else "N/A"
             base_row.append(tide_str)
 
         table.append(base_row)
@@ -357,6 +357,35 @@ def next_sentinel_pass(
                     get_tide_for_row,
                     axis=1,
                 )
+
+            # Filter dates within each row to only those within 2 months from now
+            from datetime import datetime, timedelta
+            max_future_date = datetime.now(timezone.utc) + timedelta(days=60)
+
+            def filter_dates_and_tides(row):
+                """Keep only dates and corresponding tides within 2 months."""
+                dates = row["begin_date"]
+                tides = row["tide"] if isinstance(row["tide"], list) else [row["tide"]]
+                cloudiness = row.get("cloudiness")
+
+                # Filter to valid dates
+                if isinstance(dates, list):
+                    valid_indices = [i for i, d in enumerate(dates) if d <= max_future_date]
+                    if valid_indices:
+                        row["begin_date"] = [dates[i] for i in valid_indices]
+                        row["tide"] = [tides[i] for i in valid_indices] if len(tides) == len(dates) else tides
+                        if cloudiness and isinstance(cloudiness, list) and len(cloudiness) == len(dates):
+                            row["cloudiness"] = [cloudiness[i] for i in valid_indices]
+                        return row
+                    return None  # Drop row if no valid dates
+                elif dates <= max_future_date:
+                    return row
+                else:
+                    return None
+
+            collects_grouped = collects_grouped.apply(filter_dates_and_tides, axis=1)
+            collects_grouped = collects_grouped.dropna().reset_index(drop=True)
+
         return {
             "next_collect_info": format_collects(collects_grouped),
             "next_collect_geometry": collects_grouped["geometry"].tolist(),
