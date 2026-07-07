@@ -511,7 +511,7 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
 
     # Add summary about future passes if any were filtered
     if arg_tide and future_passes_count > 0:
-        table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for legibility."
+        table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
 
     return {
         "next_collect_info": table_output,
