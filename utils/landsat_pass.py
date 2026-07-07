@@ -575,6 +575,11 @@ def next_landsat_pass(
                         tide_data_by_key[key] = []
 
         # Filter: only show rows with at least one date within 2 months if tide is requested
+        # Track future passes beyond tide window for summary
+        future_passes_count = 0
+        future_passes_min_date = None
+        future_passes_max_date = None
+
         if arg_tide:
             from datetime import datetime, timedelta
             max_future_date = datetime.now().date() + timedelta(days=60)
@@ -585,11 +590,20 @@ def next_landsat_pass(
                 if data["dates"]:
                     # Filter dates to only those within 2 months, keeping tide predictions in sync
                     tide_results = tide_data_by_key.get(key, [])
-                    valid_pairs = [
-                        (d, tide_results[i] if i < len(tide_results) else None)
-                        for i, d in enumerate(data["dates"])
-                        if datetime.strptime(d, DATE_FORMAT).date() <= max_future_date
-                    ]
+                    valid_pairs = []
+
+                    for i, d in enumerate(data["dates"]):
+                        date_obj = datetime.strptime(d, DATE_FORMAT).date()
+                        if date_obj <= max_future_date:
+                            valid_pairs.append((d, tide_results[i] if i < len(tide_results) else None))
+                        else:
+                            # Track filtered dates for summary
+                            future_passes_count += 1
+                            if future_passes_min_date is None or date_obj < future_passes_min_date:
+                                future_passes_min_date = date_obj
+                            if future_passes_max_date is None or date_obj > future_passes_max_date:
+                                future_passes_max_date = date_obj
+
                     # Only include this row if it has at least one valid date
                     if valid_pairs:
                         valid_dates = [d for d, _ in valid_pairs]
@@ -715,12 +729,18 @@ def next_landsat_pass(
         if arg_tide:
             headers.append("Tide in m, MLLW (HH/H/LL/L)")
 
+        table_output = tabulate(
+            table_data,
+            headers=headers,
+            tablefmt="grid",
+        )
+
+        # Add summary about future passes if any were filtered
+        if arg_tide and future_passes_count > 0:
+            table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for legibility."
+
         return {
-            "next_collect_info": tabulate(
-                table_data,
-                headers=headers,
-                tablefmt="grid",
-            ),
+            "next_collect_info": table_output,
             "next_collect_geometry": geometry_data,
             "next_collect_summary": summaries,
             "noaa_stations": noaa_stations if arg_tide else None,

@@ -471,13 +471,31 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             # Filter dates within each row to only those within 2 months from now
             max_future_date = datetime.now(timezone.utc) + timedelta(days=60)
 
+            # Track future passes for summary
+            future_passes_count = 0
+            future_passes_min_date = None
+            future_passes_max_date = None
+
             def filter_dates_and_tides(row):
                 """Keep only dates and corresponding tides within 2 months."""
+                nonlocal future_passes_count, future_passes_min_date, future_passes_max_date
+
                 dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
                 tides = row["tide"] if isinstance(row["tide"], list) else [row["tide"]]
 
-                # Filter to valid dates
-                valid_pairs = [(d, t) for d, t in zip(dates, tides) if d <= max_future_date]
+                # Filter to valid dates and track filtered ones
+                valid_pairs = []
+                for d, t in zip(dates, tides):
+                    if d <= max_future_date:
+                        valid_pairs.append((d, t))
+                    else:
+                        # Track filtered dates
+                        future_passes_count += 1
+                        date_only = d.date() if hasattr(d, 'date') else d
+                        if future_passes_min_date is None or date_only < future_passes_min_date:
+                            future_passes_min_date = date_only
+                        if future_passes_max_date is None or date_only > future_passes_max_date:
+                            future_passes_max_date = date_only
 
                 if valid_pairs:
                     filtered_dates, filtered_tides = zip(*valid_pairs)
@@ -489,8 +507,14 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             grouped = grouped.apply(filter_dates_and_tides, axis=1)
             grouped = grouped.dropna().reset_index(drop=True)
 
+    table_output = format_collects(grouped)
+
+    # Add summary about future passes if any were filtered
+    if arg_tide and future_passes_count > 0:
+        table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for legibility."
+
     return {
-        "next_collect_info": format_collects(grouped),
+        "next_collect_info": table_output,
         "next_collect_geometry": grouped["geometry"].tolist(),
         "next_collect_summary": build_collect_summaries(grouped),
         "intersection_pct": grouped["intersection_pct"].tolist(),
