@@ -459,6 +459,11 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             LOGGER.warning("Could not retrieve NOAA stations for AOI: %s", e)
             noaa_stations = None
 
+        # Track future passes for summary (initialize before noaa_stations check)
+        future_passes_count = 0
+        future_passes_min_date = None
+        future_passes_max_date = None
+
         if noaa_stations:
             LOGGER.info(
                 "Calculating tides for %d NISAR overpasses using %d stations ...",
@@ -470,11 +475,6 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
 
             # Filter dates within each row to only those within 2 months from now
             max_future_date = datetime.now(timezone.utc) + timedelta(days=60)
-
-            # Track future passes for summary
-            future_passes_count = 0
-            future_passes_min_date = None
-            future_passes_max_date = None
 
             def filter_dates_and_tides(row):
                 """Keep only dates and corresponding tides within 2 months."""
