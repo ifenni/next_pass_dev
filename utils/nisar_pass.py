@@ -58,11 +58,10 @@ def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_dir
 
     Example:
         >>> estimate_nisar_overpass_time("2026-06-28", 34.0, -118.0, "Descending")
-        datetime(2026, 6, 28, 2, 0, 0, tzinfo=timezone.utc)
-        # Los Angeles: ~6:00 PM local = ~02:00 UTC (next day)
+        # Los Angeles descending: 6:00 PM local ≈ 01:52 UTC the following day
     """
-    # Parse the date (YYYY-MM-DD format)
-    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    # Parse the calendar date (YYYY-MM-DD format)
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
 
     # NISAR nodal crossing times (local solar time)
     # Ascending: 6:00 AM = 06:00
@@ -79,24 +78,12 @@ def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_dir
     # Local Solar Time (LST) approximation:
     # LST ≈ UTC + (longitude / 15) hours
     # Rearranging: UTC ≈ LST - (longitude / 15)
+    # utc_hour may be negative or > 24; timedelta below rolls the day accordingly.
     local_solar_offset_hours = lon / 15.0
     utc_hour = local_solar_hour - local_solar_offset_hours
 
-    # Normalize to 0-24 hour range
-    utc_hour = utc_hour % 24
-
-    # Extract hour, minute, and second components
-    hour = int(utc_hour)
-    minute = int((utc_hour % 1) * 60)
-    second = int(((utc_hour % 1) * 60 % 1) * 60)
-
-    # Create datetime with estimated time in UTC
-    return date_obj.replace(
-        hour=hour,
-        minute=minute,
-        second=second,
-        tzinfo=timezone.utc
-    )
+    base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
+    return base + timedelta(hours=utc_hour)
 
 
 def download_nisar_plan(url: str, output_path: Path) -> Path:

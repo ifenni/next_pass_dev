@@ -62,13 +62,14 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
 
     Example:
         >>> estimate_landsat_overpass_time("06/28/2026", 34.0, -118.0)
-        datetime(2026, 6, 28, 18, 0, 48, tzinfo=timezone.utc)
-        # Los Angeles: ~10:12 AM local = ~18:00 UTC
+        # Los Angeles: ~10:12 AM local ≈ 18:04 UTC same day
+        >>> estimate_landsat_overpass_time("06/28/2026", -35.0, 150.0)
+        # Sydney: ~10:12 AM local ≈ 00:12 UTC same day
     """
-    from datetime import timezone
+    from datetime import time, timezone
 
-    # Parse the date (MM/DD/YYYY format)
-    date_obj = datetime.strptime(date_str, DATE_FORMAT)
+    # Parse the calendar date (MM/DD/YYYY format)
+    date_obj = datetime.strptime(date_str, DATE_FORMAT).date()
 
     # Landsat equatorial crossing time: 10:12 AM local solar time
     # Convert to decimal hours: 10 + 12/60 = 10.2 hours
@@ -77,24 +78,12 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
     # Local Solar Time (LST) approximation:
     # LST ≈ UTC + (longitude / 15) hours
     # Rearranging: UTC ≈ LST - (longitude / 15)
+    # utc_hour may be negative or > 24; timedelta below rolls the day accordingly.
     local_solar_offset_hours = lon / 15.0
     utc_hour = local_solar_hour - local_solar_offset_hours
 
-    # Normalize to 0-24 hour range
-    utc_hour = utc_hour % 24
-
-    # Extract hour and minute components
-    hour = int(utc_hour)
-    minute = int((utc_hour % 1) * 60)
-    second = int(((utc_hour % 1) * 60 % 1) * 60)
-
-    # Create datetime with estimated time in UTC
-    return date_obj.replace(
-        hour=hour,
-        minute=minute,
-        second=second,
-        tzinfo=timezone.utc
-    )
+    base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
+    return base + timedelta(hours=utc_hour)
 
 
 @dataclass
