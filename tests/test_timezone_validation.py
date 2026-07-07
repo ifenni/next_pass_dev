@@ -169,11 +169,25 @@ if __name__ == "__main__":
     print("Timezone Validation Tests")
     print("=" * 60)
 
+    tests = [
+        test_utc_datetime,
+        test_non_utc_datetime,
+        test_naive_datetime,
+        test_datetime_list,
+    ]
+
     results = []
-    results.append(test_utc_datetime())
-    results.append(test_non_utc_datetime())
-    results.append(test_naive_datetime())
-    results.append(test_datetime_list())
+    for test in tests:
+        try:
+            test()
+            results.append(True)
+            print(f"✓ {test.__name__}")
+        except AssertionError as e:
+            results.append(False)
+            print(f"✗ {test.__name__}: {e}")
+        except Exception as e:
+            results.append(False)
+            print(f"✗ {test.__name__} (unexpected error): {e}")
 
     print("\n" + "=" * 60)
     print(f"Results: {sum(results)}/{len(results)} tests passed")
