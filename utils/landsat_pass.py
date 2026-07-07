@@ -474,6 +474,8 @@ def next_landsat_pass(
         )
         geometry_groups = defaultdict(list)
 
+        # First pass: collect all features by key
+        features_by_key = defaultdict(list)
         for direction, features in results.items():
             if features:
                 for feature in features:
@@ -482,32 +484,51 @@ def next_landsat_pass(
                     geom = feature.get("geometry")
                     polygon = arcgis_to_polygon(geom)
 
-                    if geometryAOI.geom_type == "Point":
-                        intersection_pct = 100
-                    elif polygon and polygon.is_valid and geometryAOI.is_valid:
-                        intersection = polygon.intersection(geometryAOI)
-                        intersection_pct = 100 * (intersection.area / geometryAOI.area)
-                    else:
-                        intersection_pct = 0.0
-
                     next_pass_dates, schedule_warnings = find_next_landsat_pass(
                         path,
                         n_day_past,
                         schedule_source=schedule_source,
                         num_passes=5,
                     )
+
                     for mission, dates in next_pass_dates.items():
                         key = (direction.capitalize(), path, mission.capitalize())
-                        aggregated_data[key]["rows"].add(row)
-                        aggregated_data[key]["overlap_pct"] += intersection_pct
-                        if aggregated_data[key]["dates"] is None:
-                            aggregated_data[key]["dates"] = dates
-                        if schedule_warnings:
-                            aggregated_data[key]["warnings"] = schedule_warnings
+                        features_by_key[key].append({
+                            "row": row,
+                            "polygon": polygon,
+                            "dates": dates,
+                            "warnings": schedule_warnings,
+                        })
 
-                        if polygon:
-                            geometry_groups[key].append(polygon)
+        # Second pass: aggregate features with proper geometry union
+        for key, features in features_by_key.items():
+            for feature in features:
+                aggregated_data[key]["rows"].add(feature["row"])
+                if aggregated_data[key]["dates"] is None:
+                    aggregated_data[key]["dates"] = feature["dates"]
+                if feature["warnings"]:
+                    aggregated_data[key]["warnings"] = feature["warnings"]
+                if feature["polygon"]:
+                    geometry_groups[key].append(feature["polygon"])
+
+            # Calculate intersection percentage from merged geometries
+            polygons = geometry_groups.get(key, [])
+            if polygons:
+                merged_polygon = unary_union(polygons)
+                if geometryAOI.geom_type == "Point":
+                    intersection_pct = 100
+                elif merged_polygon.is_valid and geometryAOI.is_valid:
+                    intersection = merged_polygon.intersection(geometryAOI)
+                    intersection_pct = 100 * (intersection.area / geometryAOI.area)
+                else:
+                    intersection_pct = 0.0
+                aggregated_data[key]["overlap_pct"] = intersection_pct
             else:
+                aggregated_data[key]["overlap_pct"] = 0.0
+
+        # Handle empty results
+        for direction, features in results.items():
+            if not features:
                 key = (direction.capitalize(), "N/A", "N/A")
                 aggregated_data[key]["rows"].add("N/A")
                 aggregated_data[key]["dates"] = []
