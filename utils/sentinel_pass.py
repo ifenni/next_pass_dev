@@ -110,9 +110,12 @@ def create_s2_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-2 acquisition plan collection."""
     urls_a = scrape_esa_download_urls(SENT2_URL, "sentinel-2a")
     urls_b = scrape_esa_download_urls(SENT2_URL, "sentinel-2b")
-    urls = urls_a + urls_b
+    urls_c = scrape_esa_download_urls(SENT2_URL, "sentinel-2c")
+    urls = urls_a + urls_b + urls_c
 
-    platforms = ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b)
+    platforms = (
+        ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b) + ["S2C"] * len(urls_c)
+    )
 
     return build_sentinel_collection(
         urls,
