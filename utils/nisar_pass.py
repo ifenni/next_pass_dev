@@ -12,7 +12,14 @@ from bs4 import BeautifulSoup
 from shapely.geometry import Polygon
 from tabulate import tabulate
 
-from utils.utils import find_intersecting_collects, filter_dates_beyond_window
+from utils.utils import (
+    find_intersecting_collects,
+    filter_dates_beyond_window,
+    NISAR_ASCENDING_CROSSING_HOUR,
+    NISAR_DESCENDING_CROSSING_HOUR,
+    HOURS_PER_LONGITUDE_DEGREE,
+    TIDE_PREDICTION_WINDOW_DAYS,
+)
 from utils.tide_prediction import (
     get_stations_in_aoi,
     get_tide_info_batch,
@@ -68,22 +75,19 @@ def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_dir
     date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
 
     # NISAR nodal crossing times (local solar time)
-    # Ascending: 6:00 AM = 06:00
-    # Descending: 6:00 PM = 18:00
     if pass_direction == "Ascending":
-        local_solar_hour = 6.0
+        local_solar_hour = NISAR_ASCENDING_CROSSING_HOUR
     elif pass_direction == "Descending":
-        local_solar_hour = 18.0
+        local_solar_hour = NISAR_DESCENDING_CROSSING_HOUR
     else:
         # Unknown direction - default to descending (most common for SAR)
         LOGGER.warning(f"Unknown pass direction '{pass_direction}', assuming Descending")
-        local_solar_hour = 18.0
+        local_solar_hour = NISAR_DESCENDING_CROSSING_HOUR
 
     # Local Solar Time (LST) approximation:
-    # LST ≈ UTC + (longitude / 15) hours
-    # Rearranging: UTC ≈ LST - (longitude / 15)
+    # LST ≈ UTC + (longitude / HOURS_PER_LONGITUDE_DEGREE) hours
     # utc_hour may be negative or > 24; timedelta below rolls the day accordingly.
-    local_solar_offset_hours = lon / 15.0
+    local_solar_offset_hours = lon / HOURS_PER_LONGITUDE_DEGREE
     utc_hour = local_solar_hour - local_solar_offset_hours
 
     base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
@@ -530,7 +534,7 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 ) = filter_dates_beyond_window(
                     dates,
                     tides,
-                    max_days=60,
+                    max_days=TIDE_PREDICTION_WINDOW_DAYS,
                 )
 
                 # Update tracking variables

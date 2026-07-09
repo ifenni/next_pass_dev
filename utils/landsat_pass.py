@@ -10,7 +10,13 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
-from utils.utils import arcgis_to_polygon, filter_dates_beyond_window
+from utils.utils import (
+    arcgis_to_polygon,
+    filter_dates_beyond_window,
+    LANDSAT_EQUATORIAL_CROSSING_HOUR,
+    HOURS_PER_LONGITUDE_DEGREE,
+    TIDE_PREDICTION_WINDOW_DAYS,
+)
 from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 
 logger = logging.getLogger(__name__)
@@ -71,15 +77,13 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
     # Parse the calendar date (MM/DD/YYYY format)
     date_obj = datetime.strptime(date_str, DATE_FORMAT).date()
 
-    # Landsat equatorial crossing time: 10:12 AM local solar time
-    # Convert to decimal hours: 10 + 12/60 = 10.2 hours
-    local_solar_hour = 10.2
+    # Landsat crosses the equator at 10:12 AM local solar time
+    local_solar_hour = LANDSAT_EQUATORIAL_CROSSING_HOUR
 
     # Local Solar Time (LST) approximation:
-    # LST ≈ UTC + (longitude / 15) hours
-    # Rearranging: UTC ≈ LST - (longitude / 15)
+    # LST ≈ UTC + (longitude / HOURS_PER_LONGITUDE_DEGREE) hours
     # utc_hour may be negative or > 24; timedelta below rolls the day accordingly.
-    local_solar_offset_hours = lon / 15.0
+    local_solar_offset_hours = lon / HOURS_PER_LONGITUDE_DEGREE
     utc_hour = local_solar_hour - local_solar_offset_hours
 
     base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
@@ -612,7 +616,7 @@ def next_landsat_pass(
                     ) = filter_dates_beyond_window(
                         data["dates"],
                         tide_results,
-                        max_days=60,
+                        max_days=TIDE_PREDICTION_WINDOW_DAYS,
                         date_format=DATE_FORMAT,
                     )
 

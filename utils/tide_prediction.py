@@ -39,6 +39,8 @@ from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points
 
+from utils.utils import TIDE_PREDICTION_WINDOW_DAYS
+
 LOGGER = logging.getLogger("tide_prediction")
 
 NOAA_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
@@ -364,10 +366,10 @@ def get_tide_info_batch(
 
         target_dts = [parse_datetime(t) for t in target_isos]
 
-        # Filter out dates more than 2 months in the future (NOAA limit)
-        # Keep all past dates, but limit future predictions to 2 months
+        # Filter out dates more than TIDE_PREDICTION_WINDOW_DAYS in the future
+        # (NOAA API limit). Keep all past dates.
         now = datetime.now()
-        max_future_date = now + timedelta(days=60)
+        max_future_date = now + timedelta(days=TIDE_PREDICTION_WINDOW_DAYS)
 
         # Track which indices are beyond the 2-month limit
         valid_indices = []

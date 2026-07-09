@@ -24,6 +24,30 @@ from urllib.parse import urlparse
 
 LOGGER = logging.getLogger("acquisition_utils")
 
+# ============================================================================
+# Orbital and physical constants
+# ============================================================================
+
+# Landsat 8/9 cross the equator at 10:12 AM local solar time (descending pass)
+# Source: https://www.usgs.gov/landsat-missions/landsat-8
+LANDSAT_EQUATORIAL_CROSSING_HOUR = 10.2  # 10:12 AM in decimal hours
+
+# NISAR nodal crossing times (local solar time)
+# Source: https://science.nasa.gov/mission/nisar/mission-overview/
+NISAR_ASCENDING_CROSSING_HOUR = 6.0    # 6:00 AM local
+NISAR_DESCENDING_CROSSING_HOUR = 18.0  # 6:00 PM local
+
+# Earth rotates 15° of longitude per hour (360° / 24 hours)
+# Used for local solar time approximation: LST ≈ UTC + (lon / 15)
+HOURS_PER_LONGITUDE_DEGREE = 15.0
+
+# ============================================================================
+# API and service limits
+# ============================================================================
+
+# NOAA tide prediction only supports forecasts up to ~60 days in the future for Landsat and NISAR to improve output readability 
+TIDE_PREDICTION_WINDOW_DAYS = 60
+
 
 class Tee:
     """Write to multiple streams (e.g., terminal and log file)."""
@@ -670,7 +694,7 @@ def format_satellite_arg(sat_list):
 def filter_dates_beyond_window(
     dates: List[Union[str, datetime]],
     tide_data: List,
-    max_days: int = 60,
+    max_days: int = TIDE_PREDICTION_WINDOW_DAYS,
     date_format: Optional[str] = None,
 ) -> Tuple[List, List, int, Optional[datetime.date], Optional[datetime.date]]:
     """
