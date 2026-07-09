@@ -546,10 +546,13 @@ def next_landsat_pass(
                     "stations ...",
                     len(noaa_stations),
                 )
-                # Calculate tides for each aggregated entry
+                # Collect ALL target times across all keys into a single batch
+                # This drastically reduces NOAA API calls (avoiding rate limiting)
+                all_target_isos = []
+                key_to_indices = {}  # key -> list of indices into all_target_isos
+
                 for key, data in aggregated_data.items():
                     if data["dates"]:
-                        # Convert date strings to estimated datetime objects
                         estimated_datetimes = [
                             estimate_landsat_overpass_time(
                                 date_str, lat, lon
@@ -558,21 +561,33 @@ def next_landsat_pass(
                         ]
                         # Convert to naive ISO strings (timezone stripped intentionally)
                         # NOAA API is configured for GMT in tide_prediction.py, so all times are UTC
-                        target_isos = [
+                        key_isos = [
                             dt.strftime("%Y-%m-%dT%H:%M:%S")
                             for dt in estimated_datetimes
                         ]
-
-                        # Get tide info for these times
-                        tide_results = get_tide_info_batch(
-                            polygon=geometryAOI,
-                            target_isos=target_isos,
-                            station_dicts=noaa_stations,
-                            allow_interpolation=True,
+                        # Track where each key's tides land in the batch result
+                        start_idx = len(all_target_isos)
+                        all_target_isos.extend(key_isos)
+                        key_to_indices[key] = list(
+                            range(start_idx, start_idx + len(key_isos))
                         )
-                        tide_data_by_key[key] = tide_results
                     else:
-                        tide_data_by_key[key] = []
+                        key_to_indices[key] = []
+
+                # ONE batched call for all keys - drastically fewer NOAA API requests
+                if all_target_isos:
+                    all_tide_results = get_tide_info_batch(
+                        polygon=geometryAOI,
+                        target_isos=all_target_isos,
+                        station_dicts=noaa_stations,
+                        allow_interpolation=True,
+                    )
+                else:
+                    all_tide_results = []
+
+                # Distribute results back to each key
+                for key, indices in key_to_indices.items():
+                    tide_data_by_key[key] = [all_tide_results[i] for i in indices]
 
         # Filter: only show rows with at least one date within 2 months if tide is requested
         # Track future passes beyond tide window for summary

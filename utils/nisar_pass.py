@@ -13,7 +13,11 @@ from shapely.geometry import Polygon
 from tabulate import tabulate
 
 from utils.utils import find_intersecting_collects, filter_dates_beyond_window
-from utils.tide_prediction import get_stations_in_aoi, make_get_tide_for_row
+from utils.tide_prediction import (
+    get_stations_in_aoi,
+    get_tide_info_batch,
+    make_get_tide_for_row,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -470,8 +474,43 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 len(grouped),
                 len(noaa_stations),
             )
-            get_tide_for_row = make_get_tide_for_row(geometry, noaa_stations)
-            grouped["tide"] = grouped.apply(get_tide_for_row, axis=1)
+            # Batch ALL target times across rows into a single NOAA API call
+            # This avoids rate limiting (HTTP 403) from too many requests
+            all_target_isos = []
+            row_ranges = []  # list of (start, end) tuples in row order
+
+            for _, row in grouped.iterrows():
+                dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                row_isos = []
+                for t in dates:
+                    if isinstance(t, datetime):
+                        # Normalize to naive UTC string
+                        if t.tzinfo is not None and t.tzinfo != timezone.utc:
+                            t = t.astimezone(timezone.utc)
+                        row_isos.append(t.strftime("%Y-%m-%dT%H:%M:%S"))
+                    else:
+                        row_isos.append(t)
+
+                start_idx = len(all_target_isos)
+                all_target_isos.extend(row_isos)
+                row_ranges.append((start_idx, start_idx + len(row_isos)))
+
+            # ONE batched call for all rows
+            if all_target_isos:
+                all_tide_results = get_tide_info_batch(
+                    polygon=geometry,
+                    target_isos=all_target_isos,
+                    station_dicts=noaa_stations,
+                    allow_interpolation=True,
+                )
+            else:
+                all_tide_results = []
+
+            # Distribute results back to each row in order
+            tide_per_row = [
+                all_tide_results[start:end] for start, end in row_ranges
+            ]
+            grouped["tide"] = tide_per_row
 
             # Filter dates within each row to only those within 2 months from now
             def filter_dates_and_tides(row):

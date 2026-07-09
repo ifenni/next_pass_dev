@@ -7,7 +7,11 @@ import pandas as pd
 from tabulate import tabulate
 
 from utils.cloudiness import make_get_cloudiness_for_row
-from utils.tide_prediction import make_get_tide_for_row, get_stations_in_aoi
+from utils.tide_prediction import (
+    make_get_tide_for_row,
+    get_stations_in_aoi,
+    get_tide_info_batch,
+)
 from utils.collection_builder import build_sentinel_collection
 from utils.utils import find_intersecting_collects, scrape_esa_download_urls
 
@@ -355,11 +359,42 @@ def next_sentinel_pass(
                     num_rows,
                     len(noaa_stations),
                 )
-                get_tide_for_row = make_get_tide_for_row(geometry, noaa_stations)
-                collects_grouped["tide"] = collects_grouped.apply(
-                    get_tide_for_row,
-                    axis=1,
-                )
+                # Batch ALL target times across rows into a single NOAA API call
+                # This avoids rate limiting (HTTP 403) from too many requests
+                all_target_isos = []
+                row_ranges = []  # list of (start_idx, end_idx) tuples in row order
+
+                for _, row in collects_grouped.iterrows():
+                    dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                    row_isos = []
+                    for t in dates:
+                        if isinstance(t, datetime):
+                            if t.tzinfo is not None and t.tzinfo != timezone.utc:
+                                t = t.astimezone(timezone.utc)
+                            row_isos.append(t.strftime("%Y-%m-%dT%H:%M:%S"))
+                        else:
+                            row_isos.append(t)
+
+                    start_idx = len(all_target_isos)
+                    all_target_isos.extend(row_isos)
+                    row_ranges.append((start_idx, start_idx + len(row_isos)))
+
+                # ONE batched call for all rows
+                if all_target_isos:
+                    all_tide_results = get_tide_info_batch(
+                        polygon=geometry,
+                        target_isos=all_target_isos,
+                        station_dicts=noaa_stations,
+                        allow_interpolation=True,
+                    )
+                else:
+                    all_tide_results = []
+
+                # Distribute results back to each row in order
+                tide_per_row = [
+                    all_tide_results[start:end] for start, end in row_ranges
+                ]
+                collects_grouped["tide"] = tide_per_row
 
         return {
             "next_collect_info": format_collects(collects_grouped),
