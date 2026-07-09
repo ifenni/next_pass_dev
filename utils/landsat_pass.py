@@ -742,12 +742,14 @@ def next_landsat_pass(
                 merged = unary_union(polygons)
                 geometry_data.append(merged)
 
+        # Time-accuracy annotation appears in header only when we have an estimated time
+        time_accuracy_str = " ±15-40 min" if header_time_str else ""
         headers = [
             "Direction",
             "Path",
             "Row",
             "Mission",
-            f"Acquisition Dates{header_time_str} (P for past)",
+            f"Acquisition Dates{header_time_str}{time_accuracy_str} (P for past)",
             "AOI % Overlap",
         ]
         if arg_tide:
@@ -759,9 +761,13 @@ def next_landsat_pass(
             tablefmt="grid",
         )
 
+        # Accuracy disclaimer: Landsat overpass times are estimated (not from acquisition plans)
+        if header_time_str:
+            table_output += "\n\nNote: Overpass times are estimates based on orbital specifications (±15-40 minutes accuracy)."
+
         # Add summary about future passes if any were filtered
         if arg_tide and future_passes_count > 0:
-            table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
+            table_output += f"\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
 
         return {
             "next_collect_info": table_output,

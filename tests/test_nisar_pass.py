@@ -131,7 +131,8 @@ def test_next_nisar_pass_groups_by_best_overlap(monkeypatch):
 
     result = nisar_pass.next_nisar_pass(FakePolygon("aoi"), 13)
 
-    assert result["next_collect_info"] == "table"
+    assert result["next_collect_info"].startswith("table")
+    assert "±20-40 minutes accuracy" in result["next_collect_info"]
     assert result["intersection_pct"] == [90.0]
 
 

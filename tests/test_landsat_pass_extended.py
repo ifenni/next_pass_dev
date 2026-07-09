@@ -196,7 +196,8 @@ def test_next_landsat_pass_aggregates_geometry_and_warnings(monkeypatch):
         n_day_past=13,
     )
 
-    assert result["next_collect_info"] == "formatted-table"
+    assert result["next_collect_info"].startswith("formatted-table")
+    assert "±15-40 minutes accuracy" in result["next_collect_info"]
     assert result["next_collect_geometry"][0].name == "merged"
     assert "Warning: stale warning" in result["next_collect_summary"][0]
 

@@ -245,7 +245,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         # Show time in Direction column, dates only in separate column (more compact)
         if dates:
             first_time = dates[0].strftime("%H:%M")
-            direction_with_time = f"{row.pass_direction} (~{first_time} UTC)"
+            direction_with_time = f"{row.pass_direction} (~{first_time} UTC ±20-40 min)"
             formatted_dates = [
                 stamp.strftime("%Y-%m-%d")
                 + (" (P)" if stamp < datetime.now(timezone.utc) else "")
@@ -557,9 +557,13 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
 
     table_output = format_collects(grouped)
 
+    # Accuracy disclaimer: NISAR overpass times are estimated (not from acquisition plans)
+    if not grouped.empty:
+        table_output += "\n\nNote: Overpass times are estimates based on orbital specifications (±20-40 minutes accuracy)."
+
     # Add summary about future passes if any were filtered
     if arg_tide and future_passes_count > 0:
-        table_output += f"\n\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
+        table_output += f"\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
 
     return {
         "next_collect_info": table_output,
