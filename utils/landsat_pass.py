@@ -10,7 +10,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
-from utils.utils import arcgis_to_polygon
+from utils.utils import arcgis_to_polygon, filter_dates_beyond_window
 from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 
 logger = logging.getLogger(__name__)
@@ -581,36 +581,41 @@ def next_landsat_pass(
         future_passes_max_date = None
 
         if arg_tide:
-            from datetime import datetime, timedelta
-            max_future_date = datetime.now().date() + timedelta(days=60)
-
             # Filter dates within each key's data
             filtered_aggregated_data = {}
             for key, data in aggregated_data.items():
                 if data["dates"]:
                     # Filter dates to only those within 2 months, keeping tide predictions in sync
                     tide_results = tide_data_by_key.get(key, [])
-                    valid_pairs = []
 
-                    for i, d in enumerate(data["dates"]):
-                        date_obj = datetime.strptime(d, DATE_FORMAT).date()
-                        if date_obj <= max_future_date:
-                            valid_pairs.append((d, tide_results[i] if i < len(tide_results) else None))
-                        else:
-                            # Track filtered dates for summary
-                            future_passes_count += 1
-                            if future_passes_min_date is None or date_obj < future_passes_min_date:
-                                future_passes_min_date = date_obj
-                            if future_passes_max_date is None or date_obj > future_passes_max_date:
-                                future_passes_max_date = date_obj
+                    (
+                        filtered_dates,
+                        filtered_tides,
+                        count,
+                        min_date,
+                        max_date,
+                    ) = filter_dates_beyond_window(
+                        data["dates"],
+                        tide_results,
+                        max_days=60,
+                        date_format=DATE_FORMAT,
+                    )
+
+                    # Update tracking variables
+                    future_passes_count += count
+                    if min_date is not None:
+                        if future_passes_min_date is None or min_date < future_passes_min_date:
+                            future_passes_min_date = min_date
+                    if max_date is not None:
+                        if future_passes_max_date is None or max_date > future_passes_max_date:
+                            future_passes_max_date = max_date
 
                     # Only include this row if it has at least one valid date
-                    if valid_pairs:
-                        valid_dates = [d for d, _ in valid_pairs]
+                    if filtered_dates:
                         filtered_data = data.copy()
-                        filtered_data["dates"] = valid_dates
+                        filtered_data["dates"] = filtered_dates
                         filtered_aggregated_data[key] = filtered_data
-                        tide_data_by_key[key] = [t for _, t in valid_pairs]
+                        tide_data_by_key[key] = filtered_tides
                 else:
                     filtered_aggregated_data[key] = data
             aggregated_data = filtered_aggregated_data

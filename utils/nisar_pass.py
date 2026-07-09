@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from shapely.geometry import Polygon
 from tabulate import tabulate
 
-from utils.utils import find_intersecting_collects
+from utils.utils import find_intersecting_collects, filter_dates_beyond_window
 from utils.tide_prediction import get_stations_in_aoi, make_get_tide_for_row
 
 LOGGER = logging.getLogger(__name__)
@@ -474,8 +474,6 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             grouped["tide"] = grouped.apply(get_tide_for_row, axis=1)
 
             # Filter dates within each row to only those within 2 months from now
-            max_future_date = datetime.now(timezone.utc) + timedelta(days=60)
-
             def filter_dates_and_tides(row):
                 """Keep only dates and corresponding tides within 2 months."""
                 nonlocal future_passes_count, future_passes_min_date, future_passes_max_date
@@ -483,24 +481,31 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
                 tides = row["tide"] if isinstance(row["tide"], list) else [row["tide"]]
 
-                # Filter to valid dates and track filtered ones
-                valid_pairs = []
-                for d, t in zip(dates, tides):
-                    if d <= max_future_date:
-                        valid_pairs.append((d, t))
-                    else:
-                        # Track filtered dates
-                        future_passes_count += 1
-                        date_only = d.date() if hasattr(d, 'date') else d
-                        if future_passes_min_date is None or date_only < future_passes_min_date:
-                            future_passes_min_date = date_only
-                        if future_passes_max_date is None or date_only > future_passes_max_date:
-                            future_passes_max_date = date_only
+                # Use shared filtering function
+                (
+                    filtered_dates,
+                    filtered_tides,
+                    count,
+                    min_date,
+                    max_date,
+                ) = filter_dates_beyond_window(
+                    dates,
+                    tides,
+                    max_days=60,
+                )
 
-                if valid_pairs:
-                    filtered_dates, filtered_tides = zip(*valid_pairs)
-                    row["begin_date"] = list(filtered_dates)
-                    row["tide"] = list(filtered_tides)
+                # Update tracking variables
+                future_passes_count += count
+                if min_date is not None:
+                    if future_passes_min_date is None or min_date < future_passes_min_date:
+                        future_passes_min_date = min_date
+                if max_date is not None:
+                    if future_passes_max_date is None or max_date > future_passes_max_date:
+                        future_passes_max_date = max_date
+
+                if filtered_dates:
+                    row["begin_date"] = filtered_dates
+                    row["tide"] = filtered_tides
                     return row
                 return None  # Drop row if no valid dates
 
