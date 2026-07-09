@@ -105,8 +105,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--tide",
         action="store_true",
         help=(
-            "Display NOAA Tide Predictions for future and/or "
-            "past overpasses, respectively"
+            "Display NOAA Tide Predictions for future and/or past overpasses. "
+            "Note: For Landsat and NISAR, displayed passes are limited to those "
+            "within 60 days (NOAA API forecast limit) to improve output readability; "
+            "a summary note lists any passes scheduled beyond that window."
         ),
     )
     parser.add_argument(
