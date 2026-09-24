@@ -22,10 +22,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: prefix-dev/setup-pixi@v0.9.1
-        with:
-          pixi-version: latest
-          environments: ${{ matrix.environment }}
+      # Install directly because the repository's Actions policy blocks setup-pixi.
+      - name: Install Pixi
+        shell: bash
+        env:
+          PIXI_NO_PATH_UPDATE: "1"
+        run: |
+          curl --fail --silent --show-error --location https://pixi.sh/install.sh --output "$RUNNER_TEMP/install-pixi.sh"
+          bash "$RUNNER_TEMP/install-pixi.sh"
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+      - name: Install test environment
+        run: pixi install --locked -e ${{ matrix.environment }}
 
       - name: Run tests with coverage
         run: pixi run -e ${{ matrix.environment }} pytest tests --cov=next_pass --cov-report=term-missing
@@ -37,10 +45,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: prefix-dev/setup-pixi@v0.9.1
-        with:
-          pixi-version: latest
-          environments: lint
+      - name: Install Pixi
+        shell: bash
+        env:
+          PIXI_NO_PATH_UPDATE: "1"
+        run: |
+          curl --fail --silent --show-error --location https://pixi.sh/install.sh --output "$RUNNER_TEMP/install-pixi.sh"
+          bash "$RUNNER_TEMP/install-pixi.sh"
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+      - name: Install lint environment
+        run: pixi install --locked -e lint
 
       - name: ruff check
         run: pixi run -e lint ruff check --output-format=github

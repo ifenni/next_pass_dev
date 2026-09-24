@@ -25,10 +25,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: prefix-dev/setup-pixi@v0.9.1
-        with:
-          pixi-version: latest
-          environments: default
+      - name: Install Pixi
+        shell: bash
+        env:
+          PIXI_NO_PATH_UPDATE: "1"
+        run: |
+          curl --fail --silent --show-error --location https://pixi.sh/install.sh --output "$RUNNER_TEMP/install-pixi.sh"
+          bash "$RUNNER_TEMP/install-pixi.sh"
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+
+      - name: Install default environment
+        run: pixi install --locked -e default
 
       - name: Build weekly overpass schedule
         run: pixi run next-pass-schedule --days 7 --output site/data/upcoming_passes.parquet
