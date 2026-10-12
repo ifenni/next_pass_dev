@@ -22,6 +22,7 @@
   --l8: #1baf7a;
   --l9: #eda100;
   --nisar: #e87ba4;
+  --err: #b42318;
   --logo-ink: #303030;
   --logo-plate: rgba(252, 252, 251, 0.88);
 }
@@ -40,6 +41,7 @@
     --l8: #199e70;
     --l9: #c98500;
     --nisar: #d55181;
+    --err: #f97066;
     --logo-ink: #eeede7;
     --logo-plate: rgba(26, 26, 25, 0.85);
   }
@@ -124,7 +126,8 @@ section h2 {
 .chip { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
 .sensor-row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .dates { display: flex; gap: 8px; align-items: center; }
-.dates input {
+.coords { display: flex; gap: 8px; margin-top: 8px; }
+.dates input, .coords input {
   flex: 1;
   min-width: 0;
   padding: 5px 6px;
@@ -145,6 +148,10 @@ button {
   cursor: pointer;
 }
 button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: default; border-color: var(--hairline); }
+.matches-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.matches-head h2 { margin: 0; }
+.matches-head button { padding: 3px 10px; font-size: 12.5px; }
 button.active { border-color: var(--ink-2); background: var(--surface); font-weight: 600; }
 #status { color: var(--ink-2); font-size: 12.5px; }
 #results { flex: 1; overflow-y: auto; padding: 6px 8px; }
@@ -189,6 +196,8 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
   padding: 10px 8px 2px;
 }
 .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+#aoi-msg { color: var(--ink-2); }
+#aoi-msg.err { color: var(--err); }
 #empty { padding: 24px 16px; color: var(--ink-2); }
 @media (prefers-color-scheme: dark) {
   .leaflet-tile {
@@ -230,14 +239,25 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
       <div class="btns">
         <button id="draw-point">Drop point</button>
         <button id="draw-box">Draw box</button>
+        <button id="draw-polygon">Draw polygon</button>
+        <button id="upload-aoi" title="GeoJSON, KML, KMZ, or a zipped Shapefile (.shp + .dbf + .prj)">Upload file…</button>
         <button id="clear-aoi">Clear</button>
       </div>
-      <div class="note">Draw on the map, then matching passes appear below. Times marked (est.) are local-solar-time estimates: roughly ±40 min for NISAR frames, and up to ±1–2 h for Landsat path swaths. For exact times over your AOI, run the <code>next-pass</code> CLI.</div>
+      <input type="file" id="aoi-file" accept=".geojson,.json,.kml,.kmz,.zip" hidden>
+      <form id="coord-form" class="coords">
+        <input id="coord-input" type="text" spellcheck="false" autocomplete="off"
+               placeholder="lat lon  or  lat_min lat_max lon_min lon_max"
+               aria-label="Coordinates: lat lon, or lat_min lat_max lon_min lon_max">
+        <button type="submit">Go</button>
+      </form>
+      <div id="aoi-msg" class="note" role="status" hidden></div>
+      <div class="note">Draw on the map, upload a GeoJSON, KML/KMZ, or zipped Shapefile, or type coordinates in the same order as <code>next-pass -b</code>. Matching passes appear below. Times marked (est.) are local-solar-time estimates: roughly ±40 min for NISAR frames, and up to ±1–2 h for Landsat path swaths. For exact times over your AOI, run the <code>next-pass</code> CLI.</div>
     </section>
-    <section>
+    <section class="matches-head">
       <h2>Matches <span id="status"></span></h2>
+      <button id="copy-link" disabled title="Copy a link that reopens this search (area, sensors, dates)">Copy link</button>
     </section>
-    <div id="results"><div id="empty">Drop a point or draw a box on the map to see which sensors will pass over it.</div></div>
+    <div id="results"><div id="empty">Set an area of interest to see which sensors will pass over it.</div></div>
   </div>
   <div id="drag" title="Drag to resize"></div>
   <div id="map-wrap">
@@ -264,6 +284,9 @@ const SENSORS = [
   { key: "nisar", label: "NISAR", cssVar: "--nisar" },
 ];
 const MAX_RESULTS = 500;
+const AOI_SIMPLIFY_ABOVE = 2000;
+const AOI_SIMPLIFY_DEG = 0.001;
+const LINK_PRECISION = 5;
 
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const dark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -305,9 +328,15 @@ const state = {
   enabled: new Set(SENSORS.map((s) => s.key)),
   aoi: null,
   aoiLayer: null,
+  aoiName: null,
+  aoiToken: null,
+  hits: new Map(),
   start: null,
   end: null,
+  dataStart: null,
+  dataEnd: null,
   selected: null,
+  ready: false,
 };
 const passLayer = L.featureGroup().addTo(map);
 
@@ -344,8 +373,8 @@ async function load() {
   startInput.max = endInput.max = iso(hi);
   startInput.value = iso(lo);
   endInput.value = iso(hi);
-  state.start = startInput.value;
-  state.end = endInput.value;
+  state.start = state.dataStart = startInput.value;
+  state.end = state.dataEnd = endInput.value;
 
   const when = meta.generated_at ? new Date(meta.generated_at).toUTCString().replace(":00 GMT", " UTC") : null;
   document.getElementById("meta").textContent =
@@ -359,6 +388,7 @@ function buildSensorRows() {
     const label = document.createElement("label");
     label.className = "sensor-row";
     const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: true });
+    cb.dataset.sensor = s.key;
     cb.addEventListener("change", () => {
       cb.checked ? state.enabled.add(s.key) : state.enabled.delete(s.key);
       render();
@@ -381,17 +411,24 @@ function matches() {
   let t1 = new Date(`${state.end}T23:59:59Z`).getTime();
   if (t0 > t1) [t0, t1] = [t1, t0];
   const [ax0, ay0, ax1, ay1] = turf.bbox(state.aoi);
+  const intersects = (r) => {
+    if (state.hits.has(r)) return state.hits.get(r);
+    let hit;
+    try {
+      hit = turf.booleanIntersects(state.aoi, r.geojson);
+    } catch {
+      hit = false;
+    }
+    state.hits.set(r, hit);
+    return hit;
+  };
   return state.rows.filter((r) => {
     const t = r.begin.getTime();
     if (t < t0 || t > t1) return false;
     if (!state.enabled.has(r.sensor)) return false;
     const [x0, y0, x1, y1] = r.bbox;
     if (x1 < ax0 || x0 > ax1 || y1 < ay0 || y0 > ay1) return false;
-    try {
-      return turf.booleanIntersects(state.aoi, r.geojson);
-    } catch {
-      return false;
-    }
+    return intersects(r);
   }).sort((a, b) => a.begin - b.begin);
 }
 
@@ -435,6 +472,8 @@ function buildDetail(r) {
 }
 
 function render() {
+  writeHash();
+  document.getElementById("copy-link").disabled = !state.aoi;
   const found = matches();
   passLayer.clearLayers();
   const results = document.getElementById("results");
@@ -450,7 +489,7 @@ function render() {
     status.textContent = "";
     results.replaceChildren(Object.assign(document.createElement("div"), {
       id: "empty",
-      textContent: "Drop a point or draw a box on the map to see which sensors will pass over it.",
+      textContent: "Set an area of interest to see which sensors will pass over it.",
     }));
     return;
   }
@@ -512,23 +551,58 @@ function render() {
   results.replaceChildren(...items);
 }
 
-function setAOI(layer, geojson) {
+// Matching cost scales with AOI vertex count; ~100 m simplification is invisible next to km-scale footprints.
+function forMatching(geojson) {
+  if (turf.coordAll(geojson).length <= AOI_SIMPLIFY_ABOVE) return geojson;
+  return turf.simplify(geojson, { tolerance: AOI_SIMPLIFY_DEG, highQuality: false });
+}
+
+// `token` is a human-readable link form (pt:/box:); other shapes are packed lazily by writeHash.
+// Coordinates are rounded to the link precision so sender and receiver match the same geometry.
+function setAOI(layer, geojson, { fit = false, token = null, name = null } = {}) {
   if (state.aoiLayer) state.aoiLayer.remove();
   state.aoiLayer = layer.addTo(map);
-  state.aoi = geojson;
+  state.aoi = turf.truncate(forMatching(geojson), { precision: LINK_PRECISION, coordinates: 2 });
+  state.aoiToken = token ? Promise.resolve(token) : null;
+  state.aoiName = name;
+  state.hits = new Map();
+  if (fit) {
+    if (geojson.type === "Point") {
+      const [lng, lat] = geojson.coordinates;
+      map.setView([lat, lng], Math.max(map.getZoom(), 7));
+    } else {
+      map.fitBounds(layer.getBounds().pad(0.2));
+    }
+  }
   render();
 }
 
 const aoiStyle = () => ({ color: css("--ink"), weight: 2, dashArray: "5 4", fillOpacity: 0.02 });
 let activeDraw = null;
-function startDraw(kind, btn) {
+function stopDrawing() {
   if (activeDraw) activeDraw.disable();
+  activeDraw = null;
   document.querySelectorAll(".btns button").forEach((b) => b.classList.remove("active"));
+}
+function startDraw(kind, btn) {
+  stopDrawing();
   btn.classList.add("active");
-  activeDraw = kind === "point"
-    ? new L.Draw.Marker(map)
-    : new L.Draw.Rectangle(map, { shapeOptions: aoiStyle() });
+  const drawers = {
+    point: () => new L.Draw.Marker(map),
+    box: () => new L.Draw.Rectangle(map, { shapeOptions: aoiStyle() }),
+    polygon: () => new L.Draw.Polygon(map, { shapeOptions: aoiStyle(), allowIntersection: false }),
+  };
+  activeDraw = drawers[kind]();
   activeDraw.enable();
+}
+function wrapLongitudes(geometry) {
+  const [x0, , x1] = turf.bbox(geometry);
+  const shift = Math.round((x0 + x1) / 720) * 360;
+  if (!shift) return geometry;
+  return {
+    ...geometry,
+    coordinates: geometry.coordinates.map((ring) => ring.map(([x, y]) => [x - shift, y])),
+  };
 }
 function boxGeometry(b) {
   const s = b.getSouth(), n = b.getNorth();
@@ -547,21 +621,198 @@ function boxGeometry(b) {
 }
 map.on(L.Draw.Event.CREATED, (e) => {
   document.querySelectorAll(".btns button").forEach((b) => b.classList.remove("active"));
+  aoiMessage("");
+  const r = (v) => turf.round(v, LINK_PRECISION);
   if (e.layerType === "marker") {
     const { lat, lng } = e.layer.getLatLng().wrap();
-    setAOI(L.marker([lat, lng]), turf.point([lng, lat]).geometry);
+    const { layer, geometry, token } = parseCoordinates(`${r(lat)} ${r(lng)}`);
+    setAOI(layer, geometry, { token });
+  } else if (e.layerType === "polygon") {
+    setAOI(L.polygon(e.layer.getLatLngs(), aoiStyle()), wrapLongitudes(e.layer.toGeoJSON().geometry));
   } else {
-    setAOI(L.rectangle(e.layer.getBounds(), aoiStyle()), boxGeometry(e.layer.getBounds()));
+    const geometry = boxGeometry(e.layer.getBounds());
+    if (geometry.type === "Polygon") {
+      const [w, s, east, n] = turf.bbox(geometry);
+      const box = parseCoordinates(`${r(s)} ${r(n)} ${r(w)} ${r(east)}`);
+      setAOI(box.layer, box.geometry, { token: box.token });
+    } else {
+      setAOI(L.rectangle(e.layer.getBounds(), aoiStyle()), geometry);
+    }
   }
 });
 
+const LIBS = {
+  togeojson: "https://cdn.jsdelivr.net/npm/@tmcw/togeojson@7.1.3/+esm",
+  fflate: "https://cdn.jsdelivr.net/npm/fflate@0.8.3/+esm",
+  shpjs: "https://cdn.jsdelivr.net/npm/shpjs@6.2.0/+esm",
+};
+
+function aoiMessage(text, isError = false) {
+  const el = document.getElementById("aoi-msg");
+  el.textContent = text;
+  el.hidden = !text;
+  el.classList.toggle("err", isError);
+}
+
+async function parseKML(text) {
+  const doc = new DOMParser().parseFromString(text, "text/xml");
+  if (doc.querySelector("parsererror")) throw new Error("not a valid KML file");
+  const { kml } = await import(LIBS.togeojson);
+  return kml(doc);
+}
+
+async function readAOIFile(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (isZip) {
+    const { unzipSync, strFromU8 } = await import(LIBS.fflate);
+    const names = [];
+    const kmls = unzipSync(bytes, {
+      filter: ({ name }) => {
+        if (name.startsWith("__MACOSX/")) return false;
+        names.push(name.toLowerCase());
+        return name.toLowerCase().endsWith(".kml");
+      },
+    });
+    const [kmlText] = Object.values(kmls);
+    if (kmlText) return parseKML(strFromU8(kmlText));
+    if (!names.some((n) => n.endsWith(".shp"))) throw new Error("zip contains no .kml or .shp file");
+    const { default: shp } = await import(LIBS.shpjs);
+    return shp(bytes.buffer);
+  }
+  const text = new TextDecoder().decode(bytes);
+  if (text.trimStart().startsWith("<")) return parseKML(text);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("not a GeoJSON, KML, KMZ, or zipped Shapefile");
+  }
+}
+
+function toAOIGeometry(input) {
+  const polygons = [];
+  const points = [];
+  let ignored = 0;
+  const xy = (c) => [c[0], c[1]];
+  const visit = (g) => {
+    if (!g) return;
+    if (Array.isArray(g)) return g.forEach(visit);
+    if (g.type === "FeatureCollection") return g.features.forEach(visit);
+    if (g.type === "Feature") return visit(g.geometry);
+    if (g.type === "GeometryCollection") return g.geometries.forEach(visit);
+    if (g.type === "Polygon") polygons.push(g.coordinates.map((ring) => ring.map(xy)));
+    else if (g.type === "MultiPolygon") g.coordinates.forEach((p) => polygons.push(p.map((ring) => ring.map(xy))));
+    else if (g.type === "Point") points.push(xy(g.coordinates));
+    else if (g.type === "MultiPoint") g.coordinates.forEach((c) => points.push(xy(c)));
+    else ignored += 1;
+  };
+  visit(input);
+
+  const coords = polygons.length ? polygons.flat(2) : points;
+  if (coords.some(([x, y]) => !(Math.abs(x) <= 180 && Math.abs(y) <= 90))) {
+    throw new Error("coordinates are outside lon/lat range; GeoJSON must be in EPSG:4326");
+  }
+
+  if (polygons.length) {
+    const skipped = points.length + ignored;
+    const note = skipped ? `, ignored ${skipped} non-polygon feature${skipped > 1 ? "s" : ""}` : "";
+    if (polygons.length === 1) {
+      return { geometry: { type: "Polygon", coordinates: polygons[0] }, summary: `1 polygon${note}` };
+    }
+    let merged = null;
+    try {
+      merged = turf.union(turf.featureCollection(polygons.map((p) => turf.polygon(p))))?.geometry;
+    } catch {}
+    return {
+      geometry: merged || { type: "MultiPolygon", coordinates: polygons },
+      summary: `${polygons.length} polygons ${merged ? "merged" : "combined"}${note}`,
+    };
+  }
+  if (points.length === 1) return { geometry: { type: "Point", coordinates: points[0] }, summary: "1 point" };
+  if (points.length > 1) throw new Error(`found ${points.length} points but no polygon; use a polygon or a single point`);
+  throw new Error("no polygon or point found");
+}
+
+function aoiLayerFor(geometry) {
+  return L.geoJSON(geometry, { style: aoiStyle(), pointToLayer: (_, latlng) => L.marker(latlng) });
+}
+
+async function loadAOIFile(file) {
+  stopDrawing();
+  aoiMessage(`Reading ${file.name}…`);
+  try {
+    const { geometry, summary } = toAOIGeometry(await readAOIFile(file));
+    setAOI(aoiLayerFor(geometry), geometry, { fit: true, name: file.name });
+    aoiMessage(`Loaded ${file.name}: ${summary}.`);
+  } catch (err) {
+    aoiMessage(`Could not read ${file.name}: ${err.message}`, true);
+  }
+}
+
+function parseCoordinates(text) {
+  const nums = text.trim().split(/[\s,;]+/).filter(Boolean).map(Number);
+  if (![2, 4].includes(nums.length) || nums.some((n) => !Number.isFinite(n))) {
+    throw new Error("enter 2 numbers (lat lon) or 4 numbers (lat_min lat_max lon_min lon_max)");
+  }
+  let [latMin, latMax, lonMin, lonMax] = nums.length === 2 ? [nums[0], nums[0], nums[1], nums[1]] : nums;
+  const got = (a, b) => (a === b ? `${a}` : `${a}, ${b}`);
+  if ([latMin, latMax].some((v) => Math.abs(v) > 90)) {
+    throw new Error(`latitude must be between -90 and 90 (got ${got(latMin, latMax)})`);
+  }
+  if ([lonMin, lonMax].some((v) => Math.abs(v) > 180)) {
+    throw new Error(`longitude must be between -180 and 180 (got ${got(lonMin, lonMax)})`);
+  }
+  const swapped = [];
+  if (latMin > latMax) { [latMin, latMax] = [latMax, latMin]; swapped.push("latitudes"); }
+  if (lonMin > lonMax) { [lonMin, lonMax] = [lonMax, lonMin]; swapped.push("longitudes"); }
+  const note = swapped.length ? `Swapped min/max ${swapped.join(" and ")}.` : "";
+
+  if (nums.length === 2) {
+    return {
+      layer: L.marker([latMin, lonMin]),
+      geometry: turf.point([lonMin, latMin]).geometry,
+      token: `pt:${latMin},${lonMin}`,
+      note,
+    };
+  }
+  if (latMin === latMax || lonMin === lonMax) throw new Error("box has zero width or height");
+  return {
+    layer: L.rectangle([[latMin, lonMin], [latMax, lonMax]], aoiStyle()),
+    geometry: turf.bboxPolygon([lonMin, latMin, lonMax, latMax]).geometry,
+    token: `box:${latMin},${latMax},${lonMin},${lonMax}`,
+    note,
+  };
+}
+
 document.getElementById("draw-point").addEventListener("click", (e) => startDraw("point", e.currentTarget));
 document.getElementById("draw-box").addEventListener("click", (e) => startDraw("box", e.currentTarget));
-document.getElementById("clear-aoi").addEventListener("click", () => {
-  if (activeDraw) activeDraw.disable();
+document.getElementById("draw-polygon").addEventListener("click", (e) => startDraw("polygon", e.currentTarget));
+const fileInput = document.getElementById("aoi-file");
+document.getElementById("upload-aoi").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async () => {
+  const [file] = fileInput.files;
+  fileInput.value = "";
+  if (file) await loadAOIFile(file);
+});
+document.getElementById("coord-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  stopDrawing();
+  try {
+    const { layer, geometry, token, note } = parseCoordinates(document.getElementById("coord-input").value);
+    setAOI(layer, geometry, { fit: true, token });
+    aoiMessage(note);
+  } catch (err) {
+    aoiMessage(err.message, true);
+  }
+});
+function clearAOI() {
+  stopDrawing();
   if (state.aoiLayer) state.aoiLayer.remove();
-  state.aoi = state.aoiLayer = null;
-  document.querySelectorAll(".btns button").forEach((b) => b.classList.remove("active"));
+  state.aoi = state.aoiLayer = state.aoiToken = state.aoiName = null;
+}
+document.getElementById("clear-aoi").addEventListener("click", () => {
+  clearAOI();
+  aoiMessage("");
   render();
 });
 ["date-start", "date-end"].forEach((id) => {
@@ -569,6 +820,173 @@ document.getElementById("clear-aoi").addEventListener("click", () => {
     state[id === "date-start" ? "start" : "end"] = e.target.value;
     render();
   });
+});
+
+// Shareable link: the search (AOI, sensors, non-default dates) lives in location.hash.
+// Polygons are packed as integer deltas at LINK_PRECISION, deflated, then base64url-encoded.
+const LINK_SCALE = 10 ** LINK_PRECISION;
+
+function toBase64Url(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fromBase64Url(text) {
+  const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+const polygonsOf = (g) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates);
+
+async function packGeometry(geometry) {
+  let px = 0, py = 0;
+  const deltas = polygonsOf(geometry).map((poly) => poly.map((ring) => ring.flatMap(([x, y]) => {
+    const ix = Math.round(x * LINK_SCALE), iy = Math.round(y * LINK_SCALE);
+    const d = [ix - px, iy - py];
+    [px, py] = [ix, iy];
+    return d;
+  })));
+  const stream = new Blob([JSON.stringify(deltas)]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+  return toBase64Url(new Uint8Array(await new Response(stream).arrayBuffer()));
+}
+
+async function unpackGeometry(text) {
+  const stream = new Blob([fromBase64Url(text)]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  const deltas = JSON.parse(await new Response(stream).text());
+  let px = 0, py = 0;
+  const polygons = deltas.map((poly) => poly.map((ring) => {
+    if (!Array.isArray(ring) || ring.length < 8 || ring.length % 2) throw new Error("malformed ring");
+    const out = [];
+    for (let i = 0; i < ring.length; i += 2) {
+      if (!Number.isInteger(ring[i]) || !Number.isInteger(ring[i + 1])) throw new Error("malformed coordinates");
+      px += ring[i];
+      py += ring[i + 1];
+      const [x, y] = [px / LINK_SCALE, py / LINK_SCALE];
+      if (Math.abs(x) > 180 || Math.abs(y) > 90) throw new Error("coordinates out of range");
+      out.push([x, y]);
+    }
+    return out;
+  }));
+  if (!polygons.length) throw new Error("empty geometry");
+  return polygons.length === 1
+    ? { type: "Polygon", coordinates: polygons[0] }
+    : { type: "MultiPolygon", coordinates: polygons };
+}
+
+async function decodeAOIToken(token) {
+  const i = token.indexOf(":");
+  const [kind, body] = [token.slice(0, i), token.slice(i + 1)];
+  if (kind === "pt" || kind === "box") {
+    const parsed = parseCoordinates(body);
+    if ((kind === "pt") !== (parsed.geometry.type === "Point")) throw new Error(`wrong number of values for ${kind}`);
+    return parsed;
+  }
+  if (kind === "g") {
+    let geometry;
+    try {
+      geometry = await unpackGeometry(body);
+    } catch {
+      throw new Error("the shape data is invalid; the link may have been cut off when it was pasted");
+    }
+    return { layer: aoiLayerFor(geometry), geometry, token: null };
+  }
+  throw new Error("unknown AOI format");
+}
+
+let hashSeq = 0;
+async function writeHash() {
+  if (!state.ready) return;
+  const seq = ++hashSeq;
+  const parts = [];
+  if (state.aoi) {
+    const aoi = state.aoi;
+    state.aoiToken ??= packGeometry(aoi).then((packed) => `g:${packed}`);
+    const token = await state.aoiToken;
+    if (seq !== hashSeq || aoi !== state.aoi) return;
+    parts.push(`aoi=${token}`);
+    if (state.aoiName) parts.push(`n=${encodeURIComponent(state.aoiName)}`);
+  }
+  if (state.enabled.size !== SENSORS.length) {
+    parts.push(`s=${SENSORS.filter((s) => state.enabled.has(s.key)).map((s) => s.key).join(",")}`);
+  }
+  if (state.start !== state.dataStart || state.end !== state.dataEnd) parts.push(`d=${state.start},${state.end}`);
+  history.replaceState(null, "", parts.length ? `#${parts.join("&")}` : location.pathname + location.search);
+}
+
+function readHash(hash) {
+  return Object.fromEntries(hash.replace(/^#/, "").split("&").filter(Boolean).map((kv) => {
+    const i = kv.indexOf("=");
+    if (i < 0) return [kv, ""];
+    try {
+      return [kv.slice(0, i), decodeURIComponent(kv.slice(i + 1))];
+    } catch {
+      return [kv.slice(0, i), ""];
+    }
+  }));
+}
+
+function sharedDates(param) {
+  const full = { start: state.dataStart, end: state.dataEnd, note: "" };
+  if (param === undefined) return full;
+  const m = /^(\d{4}-\d{2}-\d{2}),(\d{4}-\d{2}-\d{2})$/.exec(param);
+  if (!m) return { ...full, note: "Ignored invalid shared dates." };
+  const [s, e] = m[1] <= m[2] ? [m[1], m[2]] : [m[2], m[1]];
+  if (e < state.dataStart || s > state.dataEnd) {
+    return { ...full, note: `Shared dates ${s} → ${e} are outside the current data window; showing ${full.start} → ${full.end}.` };
+  }
+  const start = s < state.dataStart ? state.dataStart : s;
+  const end = e > state.dataEnd ? state.dataEnd : e;
+  const trimmed = start !== s || end !== e;
+  return { start, end, note: trimmed ? `Shared dates ${s} → ${e} trimmed to the data window (${start} → ${end}).` : "" };
+}
+
+async function applyHash(hash) {
+  const params = readHash(hash);
+  const notes = [];
+  let isError = false;
+
+  const valid = new Set(SENSORS.map((s) => s.key));
+  state.enabled = "s" in params
+    ? new Set(params.s.split(",").filter((k) => valid.has(k)))
+    : new Set(valid);
+  document.querySelectorAll("#sensors input").forEach((cb) => { cb.checked = state.enabled.has(cb.dataset.sensor); });
+
+  const dates = sharedDates(params.d);
+  state.start = document.getElementById("date-start").value = dates.start;
+  state.end = document.getElementById("date-end").value = dates.end;
+
+  clearAOI();
+  if (params.aoi) {
+    try {
+      const { layer, geometry, token } = await decodeAOIToken(params.aoi);
+      setAOI(layer, geometry, { fit: true, token, name: params.n || null });
+      notes.push(params.n ? `Loaded shared AOI: ${params.n}.` : "Loaded shared search.");
+    } catch (err) {
+      notes.push(`Could not load the shared AOI (${err.message}).`);
+      isError = true;
+    }
+  }
+  if (dates.note) notes.push(dates.note);
+  aoiMessage(notes.join(" "), isError);
+}
+
+async function syncFromHash() {
+  state.ready = false;
+  await applyHash(location.hash);
+  state.ready = true;
+  render();
+}
+window.addEventListener("hashchange", syncFromHash);
+
+const copyBtn = document.getElementById("copy-link");
+copyBtn.addEventListener("click", async () => {
+  await writeHash();
+  try {
+    await navigator.clipboard.writeText(location.href);
+    copyBtn.textContent = "Link copied";
+    setTimeout(() => { copyBtn.textContent = "Copy link"; }, 1500);
+  } catch {
+    window.prompt("Copy this link:", location.href);
+  }
 });
 
 const sidebar = document.getElementById("sidebar");
@@ -598,7 +1016,7 @@ dragHandle.addEventListener("pointerdown", (e) => {
 });
 
 buildSensorRows();
-load().catch((err) => {
+load().then(syncFromHash, (err) => {
   document.getElementById("meta").textContent = `Failed to load pass data: ${err.message}`;
 });
 </script>

@@ -9,6 +9,8 @@
 Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.
 Optionally filter by **OPERA product families**, **estimate cloudiness** for the upcoming pass, and **email** results.
 
+> **Live overpass map: [opera-cal-val.github.io/next_pass](https://opera-cal-val.github.io/next_pass/)**: see which satellites will pass over your area in the coming week, right in the browser. No install needed. Updated daily.
+
 ---
 
 ## Highlights
@@ -68,10 +70,12 @@ pip install next-pass
 
 A GitHub Actions cron job runs daily: it precomputes the coming week of passes for
 all supported sensors into a GeoParquet file and publishes it, together with an
-interactive map, to the `gh-pages` branch (GitHub Pages). Open the project's
-GitHub Pages site, drop a point or draw a box, pick a date range, and see which
-sensors will pass over that AOI — built for rapidly triaging which products will
-be available over a disaster-response AOI.
+interactive map, to [GitHub Pages](https://opera-cal-val.github.io/next_pass/).
+Set an AOI (drop a point, draw a box or polygon, upload a GeoJSON / KML / KMZ /
+zipped Shapefile, or type coordinates in `-b` order), pick sensors and a date
+range, and see which sensors will pass over it. Built for rapidly triaging which
+products will be available over a disaster-response AOI. The page URL captures
+the search, so **Copy link** shares the exact same AOI and filters with a colleague.
 
 The same map runs locally against any schedule file:
 
