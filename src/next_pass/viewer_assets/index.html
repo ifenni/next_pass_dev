@@ -97,8 +97,45 @@ main { flex: 1; display: flex; min-height: 0; }
   background: var(--hairline);
 }
 #drag:hover, #drag.dragging { background: var(--muted); }
-#map-wrap { flex: 1; min-width: 0; position: relative; display: flex; }
+#map-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#map-area { flex: 1; min-height: 0; position: relative; display: flex; }
 #map { flex: 1; min-width: 0; }
+#coverage {
+  flex: none;
+  position: relative;
+  padding: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+  border-bottom: none;
+}
+#coverage-head { display: flex; align-items: baseline; gap: 10px; padding: 6px 12px 0 16px; }
+#coverage-head h2 { margin: 0; }
+#coverage-head .note { margin: 0; }
+#coverage-head button { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+#coverage-chart { display: block; width: 100%; height: 190px; }
+#coverage.collapsed #coverage-chart { display: none; }
+#coverage.collapsed #coverage-head { padding-bottom: 6px; }
+#coverage-chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#coverage-chart .grid { stroke: var(--hairline); stroke-width: 1; }
+#coverage-chart .dot { stroke: var(--surface); stroke-width: 1; fill-opacity: 0.9; pointer-events: none; }
+#coverage-chart .star { fill: none; stroke-width: 2.2; stroke-linecap: round; pointer-events: none; }
+#coverage-chart .ring { fill: none; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+#coverage-chart .hit { fill: transparent; cursor: pointer; }
+#coverage-head .key { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+#coverage-head .key svg { width: 12px; height: 12px; flex: none; }
+#coverage-tip {
+  position: absolute;
+  pointer-events: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  z-index: 900;
+}
 #brand-logo {
   position: absolute;
   right: 20px;
@@ -210,6 +247,8 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
   #sidebar { width: 100% !important; max-height: 45%; }
   #drag { display: none; }
   #brand-logo svg { height: 46px; }
+  #coverage-chart { height: 150px; }
+  #coverage-head .note { display: none; }
 }
 </style>
 </head>
@@ -261,11 +300,24 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
   </div>
   <div id="drag" title="Drag to resize"></div>
   <div id="map-wrap">
+   <div id="map-area">
     <div id="map"></div>
     <a id="brand-logo" href="https://www.jpl.nasa.gov/go/opera" target="_blank" rel="noopener"
        title="OPERA — Observational Products for End-Users from Remote sensing Analysis">
       <svg viewBox="0 0 362.58 312.14" role="img" aria-label="OPERA"><path class="op-1" d="M48,247.57v-14.9c0-10.2,4.83-16.6,16.12-16.6H81.65c11.29,0,16.12,6.4,16.12,16.6v14.9c0,10.14-4.83,16.54-16.12,16.54H64.16C52.87,264.11,48,257.71,48,247.57Zm33.61,7.49c4.56,0,6.66-1.29,6.66-7.15V232.33c0-5.92-1.9-7.21-6.66-7.21H64.16c-4.69,0-6.67,1.29-6.67,7.21v15.58c0,5.86,2.11,7.15,6.67,7.15Z"/><path class="op-1" d="M105.78,262.41V217.77a1.54,1.54,0,0,1,1.7-1.7h24.7c13.88,0,18.71,5.85,18.71,17.22v1.49c0,11-4.83,16.95-18.71,16.95h-17v10.68a1.54,1.54,0,0,1-1.7,1.7h-6A1.54,1.54,0,0,1,105.78,262.41Zm25.65-19.67c7,0,10-1.49,10-8v-1.43c0-6.88-2.86-8.17-10-8.17h-16.2v17.62Z"/><path class="op-1" d="M158.89,262.41V217.77a1.54,1.54,0,0,1,1.7-1.7h37.22a1.54,1.54,0,0,1,1.7,1.7v5.65a1.54,1.54,0,0,1-1.7,1.7H168.28V235.6H187.4a1.54,1.54,0,0,1,1.7,1.7v5a1.54,1.54,0,0,1-1.7,1.7H168.28v11.09h29.53a1.54,1.54,0,0,1,1.7,1.7v5.65a1.54,1.54,0,0,1-1.7,1.7H160.59A1.54,1.54,0,0,1,158.89,262.41Z"/><path class="op-1" d="M243.24,250.57l8.09,11.5c.82,1.15.28,2-1.08,2h-7.08a2.26,2.26,0,0,1-2-1.09l-7.42-11.5H217v10.89a1.54,1.54,0,0,1-1.7,1.7h-6.05a1.54,1.54,0,0,1-1.7-1.7V217.77a1.54,1.54,0,0,1,1.7-1.7h24.7c14,0,19.25,5.85,19.25,17.35v1C253.17,242.74,250.52,248.39,243.24,250.57Zm.41-17.08c0-7.08-3.07-8.37-10.48-8.37H217v17.42h16.2c7.28,0,10.48-1.23,10.48-8.17Z"/><path class="op-1" d="M304.13,262.81l-3.19-7H273.45l-3.27,7a2.17,2.17,0,0,1-2,1.3h-6.87c-1.29,0-1.84-.82-1.29-2l21.63-44.84a2,2,0,0,1,2-1.23h7.21a2,2,0,0,1,2,1.23l21.57,44.84c.54,1.15,0,2-1.29,2h-6.88A2.07,2.07,0,0,1,304.13,262.81Zm-6.73-14.76-10.14-22.11L277,248.05Z"/><path class="op-1" d="M223.5,76.26l.89.87A60.52,60.52,0,0,1,241,107.67c1.47.72,2.94,1.43,4.43,2.11q3.88,1.84,7.77,3.65A71.92,71.92,0,0,0,233.6,70.5c-1.19.77-2.4,1.52-3.61,2.24C227.88,74,225.72,75.16,223.5,76.26Z"/><path class="op-1" d="M132.6,83.44a148.57,148.57,0,0,0-17.73,8.3,71.88,71.88,0,0,0-5.71,24c4.08-2.34,8.17-4.72,12.18-7.08A60.42,60.42,0,0,1,132.6,83.44Z"/><path class="op-1" d="M181.25,59.26A60.53,60.53,0,0,1,218.1,71.64a64.55,64.55,0,0,0,9.27-7A72.26,72.26,0,0,0,120.45,81.25a130.33,130.33,0,0,1,18.42-4.86A60.6,60.6,0,0,1,181.25,59.26Z"/><path class="op-1" d="M120.24,120.27q0-1.42.06-2.85c-1.72,1.19-3.27,2.26-4.3,3-2.28,1.59-4.55,3.18-6.82,4.79a71.85,71.85,0,0,0,7.56,27.6q4.64-3.3,9.2-6.7A60.84,60.84,0,0,1,120.24,120.27Z"/><path class="op-1" d="M242.12,116.14c.09,1.37.14,2.75.14,4.13a60.8,60.8,0,0,1-5.7,25.82q4.58,3.39,9.21,6.71a72,72,0,0,0,7.66-29.59Q247.82,119.61,242.12,116.14Z"/><path class="op-1" d="M224.39,163.42a61.22,61.22,0,0,1-15.18,11.11q3.09,4.71,6.3,9.36a72.65,72.65,0,0,0,26-23.75q-4.09-4-8.24-7.92A61.44,61.44,0,0,1,224.39,163.42Z"/><path class="op-1" d="M138.11,163.42a61.51,61.51,0,0,1-8.87-11.21q-4.14,3.93-8.24,7.93a72.68,72.68,0,0,0,26,23.75q3.19-4.65,6.3-9.35A61.12,61.12,0,0,1,138.11,163.42Z"/><path class="op-1" d="M181.25,181.29a61.17,61.17,0,0,1-22.18-4.14q-2.55,5-5,10.07a72.48,72.48,0,0,0,54.39,0q-2.46-5.06-5-10.06A60.87,60.87,0,0,1,181.25,181.29Z"/><path class="op-2" d="M218.68,78.46c-10.79,4.55-22.55,6.86-34.15,4.61-3.91-.74-8.23-1.63-12.18-2.2s-8.26-1.08-12.21-1.33a68.81,68.81,0,0,0-18.8,1.27,56.16,56.16,0,0,0-14.17,24.4l.73-.44c26.08-12.25,57.29-13.52,85.17-7.56a109,109,0,0,1,16.7,5.22c1.87.78,3.68,1.61,5.47,2.46A56,56,0,0,0,218.68,78.46Z"/><path class="op-3" d="M130.83,110.18c-1,.73-3.06,2.12-5.34,3.68A56.15,56.15,0,0,0,130,143.1c7.64-5.73,15.16-11.6,22.65-17.53,1.37-1.11,4.75-3.78,6.06-4.85a35.94,35.94,0,0,1,43-1.63c1.3.87,3,2.27,4.18,3.25,8.81,7,17.68,14,26.69,20.76a55.94,55.94,0,0,0,4.84-22.83,56.62,56.62,0,0,0-.47-7.29q-2.92-1.74-5.85-3.45C203,93.82,158.66,94,130.83,110.18Z"/><path class="op-4" d="M201.48,123.57a30.53,30.53,0,0,0-40.46,0c-1.28,1.1-4.54,4-5.85,5.11-7.51,6.62-14.95,13.29-22.27,20.11A56.31,56.31,0,0,0,156,170.41c7.53-11.62,14.68-23.48,21.68-35.39a4.17,4.17,0,0,1,7.37.34c.16.29.65,1.1.82,1.4,1.36,2.35,5.14,8.67,6.59,11.09,4.6,7.58,9.26,15.12,14.07,22.55a56.36,56.36,0,0,0,23.08-21.61c-7.32-6.82-14.76-13.5-22.28-20.12C206,127.51,202.76,124.67,201.48,123.57Z"/><path class="op-5" d="M156.19,75.44A183.55,183.55,0,0,1,177,77.82c3.87.61,8.23,1.57,12.12,1.83a48,48,0,0,0,24.25-5.38,56.13,56.13,0,0,0-65.93,1.18Q151.85,75.22,156.19,75.44Z"/><path class="op-6" d="M182.45,138.73l-1-1.76a.21.21,0,0,0-.36,0c-1.93,3.3-5.49,9.59-7.4,13-4.21,7.56-8.35,15.14-12.34,22.8a56.3,56.3,0,0,0,39.83,0c-1.34-2.57-2.7-5.14-4.06-7.7C192.5,156.44,187.34,147.22,182.45,138.73Z"/></svg>
     </a>
+   </div>
+    <section id="coverage" hidden>
+      <div id="coverage-head">
+        <h2>AOI coverage per pass</h2>
+        <span class="note">share of the AOI inside each footprint</span>
+        <span class="key"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="currentColor"/></svg>radar</span>
+        <span class="key"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6,1V11M1.67,3.5L10.33,8.5M1.67,8.5L10.33,3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>optical (clouds may reduce usable coverage)</span>
+        <button id="coverage-toggle" aria-expanded="true">Hide</button>
+      </div>
+      <svg id="coverage-chart" role="img" aria-label="AOI coverage of each matching pass over time"></svg>
+      <div id="coverage-tip" hidden></div>
+    </section>
   </div>
 </main>
 
@@ -278,9 +330,9 @@ import { compressors } from "https://cdn.jsdelivr.net/npm/hyparquet-compressors@
 
 const SENSORS = [
   { key: "sentinel-1", label: "Sentinel-1", cssVar: "--s1" },
-  { key: "sentinel-2", label: "Sentinel-2", cssVar: "--s2" },
-  { key: "landsat-8", label: "Landsat 8", cssVar: "--l8" },
-  { key: "landsat-9", label: "Landsat 9", cssVar: "--l9" },
+  { key: "sentinel-2", label: "Sentinel-2", cssVar: "--s2", optical: true },
+  { key: "landsat-8", label: "Landsat 8", cssVar: "--l8", optical: true },
+  { key: "landsat-9", label: "Landsat 9", cssVar: "--l9", optical: true },
   { key: "nisar", label: "NISAR", cssVar: "--nisar" },
 ];
 const MAX_RESULTS = 500;
@@ -331,6 +383,9 @@ const state = {
   aoiName: null,
   aoiToken: null,
   hits: new Map(),
+  coverage: new Map(),
+  aoiArea: 0,
+  chartRows: [],
   start: null,
   end: null,
   dataStart: null,
@@ -476,6 +531,7 @@ function render() {
   document.getElementById("copy-link").disabled = !state.aoi;
   const found = matches();
   passLayer.clearLayers();
+  state.selected = null;
   const results = document.getElementById("results");
   const status = document.getElementById("status");
 
@@ -491,6 +547,7 @@ function render() {
       id: "empty",
       textContent: "Set an area of interest to see which sensors will pass over it.",
     }));
+    showCoverage([]);
     return;
   }
 
@@ -533,23 +590,159 @@ function render() {
       textContent: fmtWhat(r),
     });
     row.append(chip, when, what, buildDetail(r));
-    row.addEventListener("click", () => {
-      const wasSelected = row.classList.contains("sel");
-      document.querySelectorAll(".pass.sel").forEach((el) => el.classList.remove("sel"));
-      if (state.selected) state.selected.layer.setStyle(state.selected.baseStyle);
-      if (wasSelected) {
-        state.selected = null;
-        return;
-      }
-      row.classList.add("sel");
-      state.selected = r;
-      r.layer.setStyle({ weight: 3, opacity: 1, fillOpacity: 0.18 });
-      map.fitBounds(r.layer.getBounds().pad(0.4));
-    });
+    row.addEventListener("click", () => selectPass(r));
+    r.row = row;
     items.push(row);
   });
   results.replaceChildren(...items);
+  showCoverage(shown);
 }
+
+function selectPass(r) {
+  const prev = state.selected;
+  if (prev) {
+    prev.row.classList.remove("sel");
+    prev.layer.setStyle(prev.baseStyle);
+  }
+  state.selected = prev === r ? null : r;
+  if (state.selected) {
+    r.row.classList.add("sel");
+    r.layer.setStyle({ weight: 3, opacity: 1, fillOpacity: 0.18 });
+    map.fitBounds(r.layer.getBounds().pad(0.4));
+  }
+  drawCoverage();
+}
+
+// Same definition as the CLI's "AOI % Overlap": area(AOI ∩ footprint) / area(AOI); a point AOI is 100%.
+function coverageOf(r) {
+  if (state.coverage.has(r)) return state.coverage.get(r);
+  let pct = null;
+  if (state.aoi.type === "Point") {
+    pct = 100;
+  } else {
+    try {
+      const inter = turf.intersect(turf.featureCollection([turf.feature(state.aoi), turf.feature(r.geojson)]));
+      pct = inter ? Math.min(100, (100 * turf.area(inter)) / state.aoiArea) : 0;
+    } catch {}
+  }
+  state.coverage.set(r, pct);
+  return pct;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const DAY_MS = 86400000;
+const CHART_PAD = { top: 12, right: 18, bottom: 22, left: 42 };
+const coveragePanel = document.getElementById("coverage");
+const coverageChart = document.getElementById("coverage-chart");
+const coverageTip = document.getElementById("coverage-tip");
+let plottedRows = [];
+const OPTICAL = new Set(SENSORS.filter((s) => s.optical).map((s) => s.key));
+const ASTERISK_ARMS = [90, 30, 150].map((deg) => [Math.cos((deg * Math.PI) / 180), Math.sin((deg * Math.PI) / 180)]);
+const asteriskPath = (cx, cy, s) =>
+  ASTERISK_ARMS.map(([dx, dy]) => `M${cx - s * dx},${cy - s * dy}L${cx + s * dx},${cy + s * dy}`).join("");
+
+function svgEl(tag, attrs, text) {
+  const el = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+  if (text != null) el.textContent = text;
+  return el;
+}
+
+function showCoverage(rows) {
+  state.chartRows = rows;
+  coveragePanel.hidden = !state.aoi;
+  drawCoverage();
+}
+
+function drawCoverage() {
+  coverageTip.hidden = true;
+  const { width, height } = coverageChart.getBoundingClientRect();
+  if (coveragePanel.hidden || !width || !height) return;
+  coverageChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const [first, last] = [state.start, state.end].sort();
+  const t0 = Date.parse(`${first}T00:00:00Z`);
+  const t1 = Date.parse(`${last}T00:00:00Z`) + DAY_MS;
+  const P = CHART_PAD;
+  const plotW = width - P.left - P.right;
+  const plotH = height - P.top - P.bottom;
+  const x = (t) => P.left + ((t - t0) / (t1 - t0)) * plotW;
+  const y = (pct) => P.top + (1 - pct / 100) * plotH;
+
+  const nodes = [];
+  [0, 25, 50, 75, 100].forEach((pct) => {
+    nodes.push(svgEl("line", { class: "grid", x1: P.left, x2: width - P.right, y1: y(pct), y2: y(pct) }));
+    nodes.push(svgEl("text", { x: P.left - 6, y: y(pct), "text-anchor": "end", "dominant-baseline": "middle" }, `${pct}%`));
+  });
+  const days = Math.round((t1 - t0) / DAY_MS);
+  const labelEvery = Math.max(1, Math.ceil(48 / (plotW / days)));
+  for (let i = 0; i <= days; i++) {
+    const t = t0 + i * DAY_MS;
+    nodes.push(svgEl("line", { class: "grid", x1: x(t), x2: x(t), y1: P.top, y2: P.top + plotH }));
+    if (i < days && i % labelEvery === 0) {
+      const label = new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+      nodes.push(svgEl("text", { x: x(t + DAY_MS / 2), y: height - 6, "text-anchor": "middle" }, label));
+    }
+  }
+
+  plottedRows = state.chartRows.filter((r) => coverageOf(r) != null);
+  if (state.selected && plottedRows.includes(state.selected)) {
+    plottedRows = [...plottedRows.filter((r) => r !== state.selected), state.selected];
+  }
+  plottedRows.forEach((r, i) => {
+    const sel = r === state.selected;
+    const cx = x(r.begin.getTime());
+    const cy = y(coverageOf(r));
+    const color = sensorColor[r.sensor] ? sensorColor[r.sensor]() : css("--muted");
+    const optical = OPTICAL.has(r.sensor);
+    if (sel) nodes.push(svgEl("circle", { class: "ring", cx, cy, r: optical ? 9.5 : 12 }));
+    nodes.push(optical
+      ? svgEl("path", { class: "star", d: asteriskPath(cx, cy, sel ? 7 : 5.5), stroke: color })
+      : svgEl("circle", { class: "dot", cx, cy, r: sel ? 9 : 6.75, fill: color }));
+    nodes.push(svgEl("circle", { class: "hit", cx, cy, r: optical ? 8 : 9, "data-i": i }));
+  });
+  if (!plottedRows.length) {
+    nodes.push(svgEl("text", { x: P.left + plotW / 2, y: P.top + plotH / 2, "text-anchor": "middle" },
+      "No passes match the selected sensors and dates."));
+  }
+  coverageChart.replaceChildren(...nodes);
+}
+
+coverageChart.addEventListener("pointerover", (e) => {
+  const r = plottedRows[e.target.dataset?.i];
+  if (!r) return;
+  const line = (text) => Object.assign(document.createElement("div"), { textContent: text });
+  coverageTip.replaceChildren(
+    Object.assign(line(fmtWhat(r)), { style: "font-weight: 600" }),
+    line(`${r.begin.toISOString().slice(0, 10)} ${fmtTime(r)}`),
+    line(`AOI overlap: ${coverageOf(r).toFixed(2)}%${OPTICAL.has(r.sensor) ? " (before clouds)" : ""}`),
+  );
+  coverageTip.hidden = false;
+  const panel = coveragePanel.getBoundingClientRect();
+  const dot = e.target.getBoundingClientRect();
+  const cx = dot.left + dot.width / 2 - panel.left;
+  const cy = dot.top + dot.height / 2 - panel.top;
+  const { offsetWidth: w, offsetHeight: h } = coverageTip;
+  coverageTip.style.left = `${cx > panel.width / 2 ? cx - w - 10 : cx + 10}px`;
+  coverageTip.style.top = `${Math.max(4, Math.min(cy - h / 2, panel.height - h - 4))}px`;
+});
+coverageChart.addEventListener("pointerout", (e) => {
+  if (e.target.dataset?.i != null) coverageTip.hidden = true;
+});
+coverageChart.addEventListener("click", (e) => {
+  const r = plottedRows[e.target.dataset?.i];
+  if (!r) return;
+  selectPass(r);
+  r.row.scrollIntoView({ block: "nearest" });
+});
+document.getElementById("coverage-toggle").addEventListener("click", (e) => {
+  const collapsed = coveragePanel.classList.toggle("collapsed");
+  e.currentTarget.textContent = collapsed ? "Show" : "Hide";
+  e.currentTarget.setAttribute("aria-expanded", String(!collapsed));
+  drawCoverage();
+});
+new ResizeObserver(() => drawCoverage()).observe(coverageChart);
+new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById("map"));
 
 // Matching cost scales with AOI vertex count; ~100 m simplification is invisible next to km-scale footprints.
 function forMatching(geojson) {
@@ -566,6 +759,8 @@ function setAOI(layer, geojson, { fit = false, token = null, name = null } = {})
   state.aoiToken = token ? Promise.resolve(token) : null;
   state.aoiName = name;
   state.hits = new Map();
+  state.coverage = new Map();
+  state.aoiArea = turf.area(state.aoi);
   if (fit) {
     if (geojson.type === "Point") {
       const [lng, lat] = geojson.coordinates;
